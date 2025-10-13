@@ -1,5 +1,5 @@
 import json
-import openai
+# import openai
 import numpy as np
 import time
 import re
@@ -93,7 +93,8 @@ def compute_accuracy(gt, pred_solution):
             pred_answer = solve_math_problems(pred_solution)
 
     if pred_answer is None:
-        return 1
+        # return 1    # why return 1 here?
+        return 0
 
     # try:
     if float(answers) == float(pred_answer):
