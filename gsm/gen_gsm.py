@@ -50,7 +50,9 @@ if __name__ == "__main__":
     questions = read_jsonl("gsm_test.jsonl")
     random.shuffle(questions)
 
-    for data in questions[:100]:
+    # same for here can use 100 for smoke test, then full set for final run
+    # for data in questions[:100]:
+    for data in questions:
         question = data['question']
         answer = data['answer']
 

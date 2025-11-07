@@ -150,7 +150,9 @@ if __name__ == "__main__":
     random.shuffle(questions)
 
     # We will process 100 questions as in the original script
-    for data in tqdm(questions[:100], desc="Processing Questions"):
+    # can be use 100 questions for smoke test, and then use the full set for final run
+    # for data in tqdm(questions[:100], desc="Processing Questions"):
+    for data in tqdm(questions, desc="Processing Questions"):
         question = data['question']
         answer = data['answer']
 
