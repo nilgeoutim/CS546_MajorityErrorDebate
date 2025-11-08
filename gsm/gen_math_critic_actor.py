@@ -8,7 +8,7 @@ import re
 import time
 
 # =====================================================================================
-#  SECTION 1: Prompt Construction (v2-Fix)
+#  SECTION 1: Prompt Construction (v2-Fix, Iteration 2)
 # =====================================================================================
 
 def construct_actor_prompt(question: str) -> list:
@@ -20,8 +20,9 @@ def construct_actor_prompt(question: str) -> list:
 
 def construct_critic_prompt(question: str, solution: str) -> list:
     """
-    (v2-Fix) Constructs the 'Critic' prompt.
-    Now requires a CoT 'verification_step' *inside* the JSON to improve score quality.
+    (v2-Fix Iteration) Constructs the 'Critic' prompt.
+    1. Requires 'verification_step' CoT.
+    2. (NEW) Requires 0.5-step floating point scores for granularity.
     """
     return [
         {"role": "system", "content": "You are a Critic agent. Your task is to evaluate a given solution to a math problem based on its logical coherence and computation accuracy. Provide your evaluation in JSON format."},
@@ -37,8 +38,8 @@ Here is the proposed solution:
 
 Please evaluate this solution. You MUST provide your evaluation in a single JSON object with FOUR keys:
 1.  `verification_step` (str): First, briefly verify a key calculation or logic step. (e.g., "Verified step 2: 30 / 60 = 0.5. This is correct.")
-2.  `logic_score` (int, 1-10): Based on your verification, rate the logical coherence.
-3.  `computation_score` (int, 1-10): Based on your verification, rate the computation accuracy.
+2.  `logic_score` (float, 1.0-10.0): Based on your verification, rate the logical coherence. Use 0.5 steps (e.g., 8.0, 8.5, 9.0).
+3.  `computation_score` (float, 1.0-10.0): Based on your verification, rate the computation accuracy. Use 0.5 steps.
 4.  `critique` (str, 1-2 sentences): A brief explanation for your scores.
 
 Your response MUST be only the JSON object.
@@ -47,13 +48,14 @@ Your response MUST be only the JSON object.
 
 def construct_debate_prompt(question: str, self_analysis: dict, other_analyses: list) -> list:
     """ 
-    (v2-Fix) Constructs the Round 2 'Debater' prompt.
-    Includes a *quantified threshold* ("at least 2 points higher") 
-    to make the adaptive threshold less subjective and break stalemates.
+    (v2-Fix Iteration) Constructs the Round 2 'Debater' prompt.
+    1. (NEW) Includes multi-dimensional (Logic OR Comp) threshold.
+    2. (NEW) Uses float scores for comparison.
     """
     
     # Format the current agent's previous analysis
     self_solution = self_analysis['solution']
+    # (NEW) Handle float scores
     self_logic = self_analysis['score']['logic_score']
     self_comp = self_analysis['score']['computation_score']
     self_critique = self_analysis['score']['critique']
@@ -64,8 +66,8 @@ Your Solution:
 {self_solution}
 ```
 Your Scores:
-- Logic: {self_logic}/10
-- Computation: {self_comp}/10
+- Logic: {self_logic:.1f}/10.0
+- Computation: {self_comp:.1f}/10.0
 - Critique: {self_critique}
 """
 
@@ -85,13 +87,13 @@ Agent {i+1}'s Solution:
 {other_solution}
 ```
 Agent {i+1}'s Scores:
-- Logic: {other_logic}/10
-- Computation: {other_comp}/10
+- Logic: {other_logic:.1f}/10.0
+- Computation: {other_comp:.1f}/10.0
 - Critique: {other_critique}
 ---
 """
 
-    # (v2-Fix) Added quantified threshold (item 1) and strengthened minority defense (item 2)
+    # (v2-Fix Iteration) Added multi-dimensional (OR) threshold
     system_prompt = "You are a debater in a multi-agent debate. Your goal is to find the *most accurate* answer to the math problem by re-evaluating your own solution against the solutions and critiques from other agents."
     user_prompt = f"""
 The original math problem is:
@@ -105,8 +107,12 @@ You and other agents have all proposed solutions and received critiques. Now, yo
 --- YOUR TASK (Round 2) ---
 Carefully re-evaluate your own solution and the other agents' solutions, paying close attention to the logic, computation, and critiques.
 
-1.  **(Quantified Threshold)** If you find another agent's solution is demonstrably better (e.g., its `logic_score` is **at least 2 points higher** than your own AND your own re-evaluation confirms it), you should adopt its reasoning and answer.
-2.  **(Minority Defense)** Conversely, if you are confident your solution is correct and other agents are wrong (even if they have high scores or are in the majority), *do not* conform. Defend your solution and clearly explain *why* their logic or scores are incorrect.
+1.  **(Multi-Dimensional Threshold)** Only adopt another agent's solution if it is *demonstrably* better. This means:
+    (its `logic_score` is **at least 2.0 points higher** than yours)
+    OR 
+    (its `computation_score` is **at least 3.0 points higher** than yours)
+    AND your own re-evaluation confirms it is correct.
+2.  **(Minority Defense)** Conversely, if you are confident your solution is correct and other agents are wrong, *do not* conform, even if scores are close. Defend your solution and explain *why* their logic is flawed.
 3.  Provide your final, step-by-step reasoning.
 4.  Conclude with your final answer in the form \\boxed{{answer}}.
 
@@ -127,29 +133,38 @@ def read_jsonl(path: str) -> list:
     with open(path, 'r', encoding='utf-8') as fh:
         return [json.loads(line) for line in fh.readlines() if line]
 
+def _safe_parse_float(value: any, default: float = 0.0) -> float:
+    """(NEW) Robustly convert a value to float, handling strings, int, etc."""
+    if isinstance(value, (float, int)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    return default
+
 def parse_critic_output(text: str) -> dict:
     """
-    (v2-Fix) Safely extract the 4-key JSON from Llama's output.
-    Uses regex to find content between the first '{' and the last '}'.
+    (v2-Fix Iteration) Safely extract the 4-key JSON and parse floats.
     """
     default_score = {
         "verification_step": "Error: Could not parse output.",
-        "logic_score": 0, 
-        "computation_score": 0, 
+        "logic_score": 0.0, 
+        "computation_score": 0.0, 
         "critique": "Error parsing output."
     }
     try:
-        # Find JSON blob
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             json_str = match.group(0)
             data = json.loads(json_str)
-            # Check for all 4 keys
             if 'logic_score' in data and 'computation_score' in data and 'critique' in data and 'verification_step' in data:
                 return {
                     "verification_step": str(data.get("verification_step", "")),
-                    "logic_score": int(data.get("logic_score", 0)),
-                    "computation_score": int(data.get("computation_score", 0)),
+                    # (NEW) Use safe float parser
+                    "logic_score": _safe_parse_float(data.get("logic_score")),
+                    "computation_score": _safe_parse_float(data.get("computation_score")),
                     "critique": str(data.get("critique", ""))
                 }
             else:
@@ -176,7 +191,6 @@ def call_pipeline(pipeline, messages, max_tokens, do_sample, temp, top_p):
         top_p=top_p if do_sample else None,
     )
     
-    # outputs[0]["generated_text"] is a list, last element is the agent's response
     generated_text = outputs[0]["generated_text"][-1]['content']
     return generated_text
 
@@ -188,11 +202,11 @@ if __name__ == "__main__":
     agents = 3
     model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
     data_file = "gsm_test.jsonl"
-    # This is v2 (stalemate fix), so the output file reflects that.
-    output_file = f"gsm_critic_actor_{agents}_2_v2_fix.json" 
+    # This is the 2nd iteration of v2-fix, output file reflects that.
+    output_file = f"gsm_critic_actor_{agents}_2_v2_fix_iter2.json" 
     
     print("="*50)
-    print(f"Starting Critic-Actor (v2 Stalemate-Fix) Experiment")
+    print(f"Starting Critic-Actor (v2-Fix, Iteration 2) Experiment")
     print(f"Model: {model_id}")
     print(f"Agent Count: {agents}")
     print(f"Output File: {output_file}")
@@ -214,7 +228,7 @@ if __name__ == "__main__":
         questions = read_jsonl(data_file)
         random.seed(0)
         random.shuffle(questions)
-        # Processing 100 questions for a smoke test, as per your script
+        # Processing 100 questions for a smoke test
         questions_subset = questions[:100]
         print(f"✅ Data Loaded. Processing {len(questions_subset)} problems.")
     except FileNotFoundError:
@@ -259,7 +273,7 @@ if __name__ == "__main__":
         for sol, score in zip(actor_solutions, critic_scores):
             round_1_results.append({"solution": sol, "score": score})
 
-        # --- Stage 3: Actor Debate (v2-Fix) ---
+        # --- Stage 3: Actor Debate (v2-Fix Iteration) ---
         debate_prompts = []
         for i in range(agents):
             self_analysis = round_1_results[i]
@@ -270,8 +284,7 @@ if __name__ == "__main__":
         for i in range(agents):
             final_solution_text = call_pipeline(
                 pipeline, debate_prompts[i],
-                # Kept at 1024 as requested, to balance performance and speed
-                max_tokens=1024, 
+                max_tokens=1024, # Kept at 1024 as requested
                 do_sample=True, temp=0.7, top_p=0.9
             )
             final_solutions.append(final_solution_text)
@@ -307,8 +320,8 @@ if __name__ == "__main__":
         json.dump(results, f, indent=2, ensure_ascii=False)
 
     print("="*50)
-    print("v2 (Stalemate Fix) experiment completed.")
+    print("v2 (Stalemate Fix, Iteration 2) experiment completed.")
     print("Next steps:")
     print(f"1. Ensure '{output_file}' has been generated.")
-    print(f"2. Run 'comprehensive_analysis_v2_fix.py' to evaluate this new file.")
+    print(f"2. Run 'comprehensive_analysis_v2_fix.py' (with float fix) to evaluate.")
     print("="*50)
