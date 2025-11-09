@@ -3,246 +3,351 @@ import torch
 import json
 import numpy as np
 import random
+from tqdm import tqdm
 import re
 import time
-from tqdm import tqdm
 
-# --- Helper Functions from original files ---
+# =====================================================================================
+#  SECTION 1: Prompt Construction (v2-Final-Fix)
+# =====================================================================================
 
-def read_jsonl(path: str):
-    """Reads a .jsonl file and returns a list of dictionaries."""
-    with open(path) as fh:
-        return [json.loads(line) for line in fh.readlines() if line]
+def construct_actor_prompt(question: str) -> list:
+    """Constructs the Round 1 Actor Prompt."""
+    return [
+        {"role": "system", "content": "You are a helpful assistant that solves math problems. Think step by step."},
+        {"role": "user", "content": f"Can you solve the following math problem? {question}\n\nExplain your reasoning. Your final answer should be a single numerical number, in the form \\boxed{{answer}}, at the end of your response. Let's think step by step."}
+    ]
 
-def parse_critic_output(text: str):
+def construct_critic_prompt(question: str, solution: str) -> list:
     """
-    Parses the JSON output from the critic LLM.
-    Handles cases where the LLM might add extra text around the JSON.
+    (v2-Final-Fix) Constructs the 'Critic' prompt.
+    1. Requires 'verification_step' CoT.
+    2. Requires 0.5-step floating point scores.
+    3. (NEW) Asks for JSON in a markdown code block for stability.
     """
-    try:
-        # Find the first '{' and the last '}'
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            data = json.loads(json_str)
-            # Ensure keys exist
-            return {
-                'logic_score': data.get('logic_score', 0),
-                'computation_score': data.get('computation_score', 0),
-                'critique': data.get('critique', 'Parsing error or missing critique.')
-            }
-        else:
-            print(f"Warning: No JSON object found in critic output: {text}")
-            return {'logic_score': 0, 'computation_score': 0, 'critique': 'Failed to find JSON object.'}
-    except json.JSONDecodeError:
-        print(f"Warning: Failed to decode JSON from critic: {text}")
-        return {'logic_score': 0, 'computation_score': 0, 'critique': 'JSONDecodeError.'}
+    return [
+        {"role": "system", "content": "You are a Critic agent. Your task is to evaluate a given solution to a math problem based on its logical coherence and computation accuracy. Provide your evaluation in JSON format."},
+        {"role": "user", "content": f"""Here is the math problem:
+---
+{question}
+---
 
-# --- New Prompt Construction Functions ---
-
-def construct_actor_prompt(question: str):
-    """
-    Creates the initial prompt for the Actor agent to solve the problem.
-    """
-    content = f"""Can you solve the following math problem? {question}
-Explain your reasoning. Your final answer should be a single numerical number, in the form \\boxed{{answer}}, at the end of your response. Let's think step by step."""
-    return [{"role": "user", "content": content}]
-
-def construct_critic_prompt(question: str, solution: str):
-    """
-    Creates the prompt for the Critic agent to evaluate a given solution.
-    It requests scores for Logic (S_Logic) and Computation (S_Comp) as JSON.
-    """
-    content = f"""You are a Critic agent. Your task is to evaluate a given solution to a math problem based on its logic and computation.
-The problem is:
-"{question}"
-
-The proposed solution is:
-```
+Here is the proposed solution:
+---
 {solution}
-```
+---
 
-Please provide your evaluation in a single JSON object with three keys:
-1.  `logic_score`: An integer score from 1 (poor) to 10 (perfect) rating the logical coherence and soundness of the reasoning steps.
-2.  `computation_score`: An integer score from 1 (poor) to 10 (perfect) rating the accuracy of numerical calculations.
-3.  `critique`: A brief, one-sentence explanation for your scores.
+Please evaluate this solution. You MUST provide your evaluation in a single JSON object inside a markdown code block (```json ... ```) with FOUR keys:
+1.  `verification_step` (str): First, briefly verify a key calculation or logic step. (e.g., "Verified step 2: 30 / 60 = 0.5. This is correct.")
+2.  `logic_score` (float, 1.0-10.0): Based on your verification, rate the logical coherence. Use 0.5 steps (e.g., 8.0, 8.5, 9.0).
+3.  `computation_score` (float, 1.0-10.0): Based on your verification, rate the computation accuracy. Use 0.5 steps.
+4.  `critique` (str, 1-2 sentences): A brief explanation for your scores.
 
-Your response MUST be only the JSON object.
-"""
-    return [{"role": "user", "content": content}]
+Your response MUST be only the markdown code block containing the JSON object.
+"""}
+    ]
 
-def format_other_solutions_scores(other_solutions_scores: list) -> str:
-    """Helper to format other agents' data for the debate prompt."""
-    formatted_string = ""
-    for i, item in enumerate(other_solutions_scores):
-        solution = item['solution']
-        score = item['score']
-        formatted_string += f"\n--- Agent {i+1} Solution ---\n"
-        formatted_string += f"Logic Score: {score['logic_score']}/10\n"
-        formatted_string += f"Computation Score: {score['computation_score']}/10\n"
-        formatted_string += f"Critique: {score['critique']}\n"
-        formatted_string += f"Solution:\n```\n{solution}\n```\n"
-    return formatted_string
-
-def construct_debate_prompt(question: str, my_solution: str, my_score: dict, other_solutions_scores: list):
-    """
-    Creates the prompt for the Actor agent's second round (the debate).
-    It implements the "adaptive threshold" by instructing the agent to compare scores.
+def construct_debate_prompt(question: str, self_analysis: dict, other_analyses: list) -> list:
+    """ 
+    (v2-Final-Fix) Constructs the Round 2 'Debater' prompt.
+    Includes multi-dimensional (Logic OR Comp) quantified threshold.
     """
     
-    other_agents_info = format_other_solutions_scores(other_solutions_scores)
-
-    content = f"""You are a debater in a multi-agent debate to solve a math problem.
-The original problem is:
-"{question}"
-
---- Your Previous Solution ---
-Your solution was:
+    # Format the current agent's previous analysis
+    self_solution = self_analysis['solution']
+    self_logic = self_analysis['score']['logic_score']
+    self_comp = self_analysis['score']['computation_score']
+    self_critique = self_analysis['score']['critique']
+    self_prompt_part = f"""
+--- YOUR PREVIOUS ANALYSIS (Round 1) ---
+Your Solution:
 ```
-{my_solution}
+{self_solution}
 ```
-Your solution was evaluated by a Critic with the following scores:
--   Logic Score: {my_score['logic_score']}/10
--   Computation Score: {my_score['computation_score']}/10
--   Critique: {my_score['critique']}
-
---- Other Agents' Solutions and Scores ---
-{other_agents_info}
-
---- Your Task ---
-Review all solutions and their scores.
-Your goal is to find the *most accurate* answer.
--   If you believe your original solution is correct despite low scores or other opinions, defend it and restate your answer.
--   If you find another agent's solution is demonstrably better (based on its high logic/computation scores and your own re-evaluation), you should adopt its reasoning and answer.
-
-Provide your final, updated reasoning. Your final answer should be a single numerical number, in the form \\boxed{{answer}}, at the end of your response. Let's think step by step.
+Your Scores:
+- Logic: {self_logic:.1f}/10.0
+- Computation: {self_comp:.1f}/10.0
+- Critique: {self_critique}
 """
-    return [{"role": "user", "content": content}]
 
-# --- Main Execution ---
+    # Format other agents' analyses
+    other_prompt_part = "\n--- OTHER AGENTS' ANALYSES (Round 1) ---\n"
+    if not other_analyses:
+        other_prompt_part += "No other agents provided analysis in this round.\n"
+    else:
+        for i, analysis in enumerate(other_analyses):
+            other_solution = analysis['solution']
+            other_logic = analysis['score']['logic_score']
+            other_comp = analysis['score']['computation_score']
+            other_critique = analysis['score']['critique']
+            other_prompt_part += f"""
+Agent {i+1}'s Solution:
+```
+{other_solution}
+```
+Agent {i+1}'s Scores:
+- Logic: {other_logic:.1f}/10.0
+- Computation: {other_comp:.1f}/10.0
+- Critique: {other_critique}
+---
+"""
+
+    # Multi-dimensional quantified threshold
+    system_prompt = "You are a debater in a multi-agent debate. Your goal is to find the *most accurate* answer to the math problem by re-evaluating your own solution against the solutions and critiques from other agents."
+    user_prompt = f"""
+The original math problem is:
+{question}
+
+You and other agents have all proposed solutions and received critiques. Now, you must re-evaluate everything to provide a final, definitive answer.
+
+{self_prompt_part}
+{other_prompt_part}
+
+--- YOUR TASK (Round 2) ---
+Carefully re-evaluate your own solution and the other agents' solutions, paying close attention to the logic, computation, and critiques.
+
+1.  **(Multi-Dimensional Threshold)** Only adopt another agent's solution if it is *demonstrably* better. This means:
+    (its `logic_score` is **at least 2.0 points higher** than yours) 
+    OR 
+    (its `computation_score` is **at least 3.0 points higher** than yours)
+    AND your own re-evaluation confirms it is correct.
+2.  **(Minority Defense)** Conversely, if you are confident your solution is correct and other agents are wrong, *do not* conform, even if scores are close. Defend your solution and explain *why* their logic is flawed.
+3.  Provide your final, step-by-step reasoning.
+4.  Conclude with your final answer in the form \\boxed{{answer}}.
+
+Let's think step by step again.
+"""
+    
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+# =====================================================================================
+#  SECTION 2: Helper Functions
+# =====================================================================================
+
+def read_jsonl(path: str) -> list:
+    """Reads a JSONL file."""
+    with open(path, 'r', encoding='utf-8') as fh:
+        return [json.loads(line) for line in fh.readlines() if line]
+
+def _safe_parse_float(value: any, default: float = 0.0) -> float:
+    """Robustly convert a value to float, handling strings, int, etc."""
+    if isinstance(value, (float, int)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    return default
+
+def parse_critic_output(text: str) -> dict:
+    """
+    (v2-Final-Fix) Safely extract the 4-key JSON and parse floats.
+    Now searches for ```json code blocks first.
+    """
+    default_score = {
+        "verification_step": "Error: Could not parse output.",
+        "logic_score": 0.0, 
+        "computation_score": 0.0, 
+        "critique": "Error parsing output."
+    }
+    try:
+        # (NEW) First, try to find a markdown JSON code block
+        match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+        
+        if match:
+            json_str = match.group(1)
+        else:
+            # Fallback: find the first and last curly brace
+            match = re.search(r'\{.*\}', text, re.DOTALL)
+            if match:
+                json_str = match.group(0)
+            else:
+                # If no JSON block or curly braces are found
+                print(f"\n[Warning] No JSON found in critic output.\nText was: {text}\n")
+                return default_score
+
+        # Now, try to load the found json_str
+        data = json.loads(json_str)
+        
+        if 'logic_score' in data and 'computation_score' in data and 'critique' in data and 'verification_step' in data:
+            return {
+                "verification_step": str(data.get("verification_step", "")),
+                "logic_score": _safe_parse_float(data.get("logic_score")),
+                "computation_score": _safe_parse_float(data.get("computation_score")),
+                "critique": str(data.get("critique", ""))
+            }
+        else:
+            print(f"\n[Warning] JSON missing required keys.\nText was: {text}\n")
+            return default_score
+            
+    except Exception as e:
+        print(f"\n[Warning] Failed to parse critic JSON: {e}\nText was: {text}\n")
+        return default_score
+
+def call_pipeline(pipeline, messages, gen_config):
+    """
+    (v2-Final-Fix) Helper function to call the generation pipeline.
+    Now takes a gen_config dict for all parameters.
+    """
+    terminators = [
+        pipeline.tokenizer.eos_token_id, 
+        pipeline.tokenizer.convert_tokens_to_ids("<|end_of_text|>")
+    ]
+    
+    outputs = pipeline(
+        messages,
+        max_new_tokens=gen_config['max_tokens'],
+        eos_token_id=terminators,
+        do_sample=gen_config['do_sample'],
+        temperature=gen_config['temp'],
+        top_p=gen_config['top_p'],
+    )
+    
+    generated_text = outputs[0]["generated_text"][-1]['content']
+    return generated_text
+
+# =====================================================================================
+#  SECTION 3: Main Execution
+# =====================================================================================
 
 if __name__ == "__main__":
-    agents = 3  # 3 Actor agents
-    # A 2-round debate: Round 1 = initial solve, Round 2 = debate
-    rounds = 2 
-    random.seed(0)
+    # --- 1. All Configuration Parameters (Refactored) ---
+    config = {
+        "agents": 3,
+        "model_id": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "data_file": "gsm_test.jsonl",
+        "output_file": f"gsm_critic_actor_3_2_v2_final_fix.json", # v2-Final-Fix output
+        "questions_to_process": 100 # Set to full list length if needed
+    }
+    
+    # Generation config for Actors (diverse, creative)
+    actor_gen_config = {
+        "max_tokens": 1024, # Your 1024 limit
+        "do_sample": True,
+        "temp": 0.7,
+        "top_p": 0.9
+    }
+    
+    # Generation config for Critics (deterministic, structured)
+    critic_gen_config = {
+        "max_tokens": 256,
+        "do_sample": False,
+        "temp": None,
+        "top_p": None
+    }
+    
+    print("="*50)
+    print(f"Starting Critic-Actor (v2-Final-Fix) Experiment")
+    print(f"Model: {config['model_id']}")
+    print(f"Agent Count: {config['agents']}")
+    print(f"Output File: {config['output_file']}")
+    print("="*50)
 
-    # --- Load Llama Model ---
-    # This is the same setup as your gen_gsm.py
-    model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-    print(f"Loading model: {model_id}...")
+    # --- 2. Load Model ---
+    print("Loading Llama 3.1, please wait...")
     pipeline = transformers.pipeline(
         "text-generation",
-        model=model_id,
+        model=config['model_id'],
         model_kwargs={"torch_dtype": torch.bfloat16},
         device_map="auto",
     )
-    # Set a terminator to stop the model from rambling
-    # Note: Adjust terminators based on the specific Llama model's prompting guide
-    terminators = [
-        pipeline.tokenizer.eos_token_id,
-        pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-    ]
-    print("Model loaded.")
+    print("✅ Llama 3.1 Loaded.")
 
+    # --- 3. Load Data ---
+    print(f"Loading data from {config['data_file']}...")
+    try:
+        questions = read_jsonl(config['data_file'])
+        random.seed(0)
+        random.shuffle(questions)
+        questions_subset = questions[:config['questions_to_process']]
+        print(f"✅ Data Loaded. Processing {len(questions_subset)} problems.")
+    except FileNotFoundError:
+        print(f"❌ Error: Data file not found at '{config['data_file']}'.")
+        print("Please ensure 'gsm_test.jsonl' is in the same directory.")
+        exit()
+
+    # --- 4. Run Experiment ---
     results = {}
-    questions = read_jsonl("gsm_test.jsonl") 
-    random.shuffle(questions)
-
-    # We will process 100 questions as in the original script
-    # can be use 100 questions for smoke test, and then use the full set for final run
-    # for data in tqdm(questions[:100], desc="Processing Questions"):
-    for data in tqdm(questions, desc="Processing Questions"):
+    
+    for data in tqdm(questions_subset, desc="Processing Questions"):
         question = data['question']
-        answer = data['answer']
-
-        agent_solutions = [None] * agents
-        agent_scores = [None] * agents
+        ground_truth = data['answer']
         
-        # --- ROUND 1: Initial Solve (Actor) + Critique (Critic) ---
+        round_1_results = []
         
-        # 1. Actor Phase: All agents generate initial solutions
-        for i in range(agents):
-            actor_prompt = construct_actor_prompt(question)
-            
-            outputs = pipeline(
-                actor_prompt,
-                max_new_tokens=1024, # Allow space for reasoning
-                eos_token_id=terminators,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
+        # --- Stage 1: Initial Actor Solutions ---
+        actor_prompts = [construct_actor_prompt(question) for _ in range(config['agents'])]
+        actor_solutions = []
+        for i in range(config['agents']):
+            solution_text = call_pipeline(
+                pipeline, actor_prompts[i], actor_gen_config
             )
-            solution_text = outputs[0]["generated_text"][-1]['content']
-            agent_solutions[i] = solution_text
+            actor_solutions.append(solution_text)
+            time.sleep(0.1) 
 
-        # 2. Critic Phase: All solutions are scored
-        for i in range(agents):
-            critic_prompt = construct_critic_prompt(question, agent_solutions[i])
-            
-            outputs = pipeline(
-                critic_prompt,
-                max_new_tokens=256, # JSON output is small
-                eos_token_id=terminators,
-                do_sample=False, # We want deterministic JSON output
+        # --- Stage 2: Initial Critic Scores ---
+        critic_prompts = [construct_critic_prompt(question, sol) for sol in actor_solutions]
+        critic_scores = []
+        for i in range(config['agents']):
+            score_text = call_pipeline(
+                pipeline, critic_prompts[i], critic_gen_config
             )
-            critique_text = outputs[0]["generated_text"][-1]['content']
-            agent_scores[i] = parse_critic_output(critique_text)
+            critic_scores.append(parse_critic_output(score_text))
+            time.sleep(0.1)
 
-        # Store Round 1 results
-        round_1_data = [{"solution": s, "score": c} for s, c in zip(agent_solutions, agent_scores)]
+        # Collate Round 1 results
+        for sol, score in zip(actor_solutions, critic_scores):
+            round_1_results.append({"solution": sol, "score": score})
 
-        # --- ROUND 2: Debate (Actor) + Final Critique (Critic) ---
-        # This loop implements the "rounds > 1" logic
-        
-        final_solutions = [None] * agents
-        final_scores = [None] * agents
+        # --- Stage 3: Actor Debate (v2-Final-Fix) ---
+        debate_prompts = []
+        for i in range(config['agents']):
+            self_analysis = round_1_results[i]
+            other_analyses = round_1_results[:i] + round_1_results[i+1:]
+            debate_prompts.append(construct_debate_prompt(question, self_analysis, other_analyses))
 
-        # 3. Debate Phase: All agents re-evaluate based on others' scores
-        for i in range(agents):
-            my_solution = agent_solutions[i]
-            my_score = agent_scores[i]
-            
-            other_solutions_scores = []
-            for j in range(agents):
-                if i != j:
-                    other_solutions_scores.append({"solution": agent_solutions[j], "score": agent_scores[j]})
-            
-            debate_prompt = construct_debate_prompt(question, my_solution, my_score, other_solutions_scores)
-
-            outputs = pipeline(
-                debate_prompt,
-                max_new_tokens=1024,
-                eos_token_id=terminators,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
+        final_solutions = []
+        for i in range(config['agents']):
+            final_solution_text = call_pipeline(
+                pipeline, debate_prompts[i], actor_gen_config # Use actor config
             )
-            solution_text = outputs[0]["generated_text"][-1]['content']
-            final_solutions[i] = solution_text
+            final_solutions.append(final_solution_text)
+            time.sleep(0.1)
 
-        # 4. Final Critic Phase: Score the final answers
-        for i in range(agents):
-            critic_prompt = construct_critic_prompt(question, final_solutions[i])
-            
-            outputs = pipeline(
-                critic_prompt,
-                max_new_tokens=256,
-                eos_token_id=terminators,
-                do_sample=False,
+        # --- Stage 4: Final Critic Scores ---
+        final_critic_prompts = [construct_critic_prompt(question, sol) for sol in final_solutions]
+        final_critic_scores = []
+        for i in range(config['agents']):
+            final_score_text = call_pipeline(
+                pipeline, final_critic_prompts[i], critic_gen_config
             )
-            critique_text = outputs[0]["generated_text"][-1]['content']
-            final_scores[i] = parse_critic_output(critique_text)
+            final_critic_scores.append(parse_critic_output(final_score_text))
+            time.sleep(0.1)
 
-        # --- Save results for this question ---
+        # Collate Final Round results
+        final_round_results = []
+        for sol, score in zip(final_solutions, final_critic_scores):
+            final_round_results.append({"solution": sol, "score": score})
+            
+        # --- 5. Save result for this question ---
         results[question] = {
-            "ground_truth": answer,
-            "round_1_results": round_1_data,
-            "final_round_results": [{"solution": s, "score": c} for s, c in zip(final_solutions, final_scores)]
+            "ground_truth": ground_truth,
+            "round_1_results": round_1_results,
+            "final_round_results": final_round_results
         }
 
-        # Save checkpoint after each question
-        json.dump(results, open(f"gsm_critic_actor_{agents}_{rounds}.json", "w"), indent=2)
+    # --- 6. Save final JSON file ---
+    print(f"\n✅ Experiment complete. Saving results to {config['output_file']}...")
+    with open(config['output_file'], 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
 
-    print("Experiment finished.")
-    print(f"Results saved to gsm_critic_actor_{agents}_{rounds}.json")
+    print("="*50)
+    print("v2 (Final-Fix) experiment completed.")
+    print("Next steps:")
+    print(f"1. Ensure '{config['output_file']}' has been generated.")
+    print(f"2. Run 'comprehensive_analysis_v2_final_fix.py' to evaluate.")
+    print("="*50)
