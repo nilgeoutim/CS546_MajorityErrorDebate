@@ -1,9 +1,11 @@
 import openai
+from openai import OpenAI
 import json
 import numpy as np
 import time
 import pickle
 from tqdm import tqdm
+import os
 
 def parse_bullets(sentence):
     bullets_preprocess = sentence.split("\n")
@@ -25,8 +27,19 @@ def parse_bullets(sentence):
 
 def generate_answer(answer_context):
     try:
-        completion = openai.ChatCompletion.create(
-                  model="gpt-3.5-turbo-0301",
+        # client = OpenAI(
+        #     base_url="https://router.huggingface.co/v1",
+        #     api_key=os.environ["HF_TOKEN"],
+        # )
+
+        # completion = client.chat.completions.create(
+        #           model="meta-llama/Llama-3.1-8B-Instruct:novita",
+        #           messages=answer_context,
+        #           n=1)
+        
+        client = openai.OpenAI()
+        completion = client.chat.completions.create(
+                  model="gpt-3.5-turbo",
                   messages=answer_context,
                   n=1)
     except:
@@ -56,7 +69,7 @@ def construct_message(agents, question, idx):
 
 
 def construct_assistant_message(completion):
-    content = completion["choices"][0]["message"]["content"]
+    content = completion.choices[0].message.content
     return {"role": "assistant", "content": content}
 
 def parse_answer(sentence):
@@ -86,11 +99,11 @@ def most_frequent(List):
 if __name__ == "__main__":
     answer = parse_answer("My answer is the same as the other agents and AI language model: the result of 12+28*19+6 is 550.")
 
-    agents = 2
+    agents = 3
     rounds = 3
     np.random.seed(0)
 
-    evaluation_round = 100
+    evaluation_round = 10
     scores = []
 
     generated_description = {}

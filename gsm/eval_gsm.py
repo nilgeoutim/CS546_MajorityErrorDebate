@@ -1,5 +1,5 @@
 import json
-# import openai
+import openai
 import numpy as np
 import time
 import re
@@ -75,17 +75,17 @@ def compute_accuracy(gt, pred_solution):
     if type(pred_solution) == list:
         pred_answers = []
 
-        for pred_solution in pred_solutions:
-            pred_answer = parse_answer(pred_solution)
+        for pred_sol in pred_solution:
+            pred_answer = parse_answer(pred_sol)
 
             if pred_answer is None:
-                pred_answer = solve_math_problems(pred_solution)
+                pred_answer = solve_math_problems(pred_sol)
 
             pred_answers.append(pred_answer)
 
         # print("pred_answers: ", pred_answers)
         pred_answer = most_frequent(pred_answers)
-        # print("pred answer: ", pred_answer)
+        # print("pred answer & gt: ", pred_answer, answers)
         # pred_answer = pred_answers[0]
     else:
         pred_answer = parse_answer(pred_solution)
@@ -93,8 +93,8 @@ def compute_accuracy(gt, pred_solution):
             pred_answer = solve_math_problems(pred_solution)
 
     if pred_answer is None:
-        # return 1    # why return 1 here?
         return 0
+    # return 1 here? why 
 
     # try:
     if float(answers) == float(pred_answer):
@@ -120,7 +120,7 @@ def most_frequent(List):
     return num
 
 if __name__ == "__main__":
-    response_dict = json.load(open("gsm_debate_3_3.json", "r"))
+    response_dict = json.load(open("gsm_1_1_all.json", "r"))
 
     questions = list(response_dict.keys())
 
@@ -136,6 +136,7 @@ if __name__ == "__main__":
             pred_solutions.append(pred_solution)
 
         accurate = compute_accuracy(gt, pred_solutions)
+        # print("accurate: ", accurate)
 
         if accurate is not None:
             accuracies.append(float(accurate))
@@ -145,4 +146,4 @@ if __name__ == "__main__":
             print(gt)
 
         print("accuracies:", np.mean(accuracies), np.std(accuracies) / (len(accuracies) ** 0.5))
-
+        
