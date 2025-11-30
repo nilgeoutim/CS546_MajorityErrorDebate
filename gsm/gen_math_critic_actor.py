@@ -226,10 +226,10 @@ if __name__ == "__main__":
     
     # Generation config for Actors (diverse, creative)
     actor_gen_config = {
-        "max_tokens": 1024, # Your 1024 limit
-        "do_sample": True,
-        "temp": 0.7,
-        "top_p": 0.9
+        "max_tokens": max_tokens, 
+        "do_sample": False,
+        "temp": None,
+        "top_p": None
     }
     
     # Generation config for Critics (deterministic, structured)
