@@ -6,19 +6,13 @@ import os
 from collections import Counter # Import Counter for a deterministic 'most_frequent'
 
 # =====================================================================================
-#  SECTION 1: Core Evaluation Functions (v2 Fix)
+#  SECTION 1: Core Evaluation Functions (v2-Final-Fix)
 # =====================================================================================
 
 def parse_answer(input_str: str) -> str:
-    """
-    (v2) Safer answer parser.
-    First finds \boxed{...}.
-    If not found, *only* finds numbers at the very end (^) of the string.
-    This prevents grabbing "1" from "Agent 1" or "52" from "52 apples".
-    """
+    """(v2) Safer answer parser."""
     if not isinstance(input_str, str):
         return None
-        
     # Pattern 1: \boxed{...}
     pattern_boxed = r"\\boxed\{([0-9.,$]*)\}"
     matches = re.findall(pattern_boxed, input_str)
@@ -29,7 +23,6 @@ def parse_answer(input_str: str) -> str:
             return solution # Found \boxed{}, return immediately
 
     # Pattern 2: Number at the end of the string
-    # Only triggers if \boxed{} is not found
     pattern_final_num = r"(\d+\.?\d*)\s*$"
     matches = re.findall(pattern_final_num, input_str)
     if matches:
@@ -38,22 +31,13 @@ def parse_answer(input_str: str) -> str:
     return None
 
 def most_frequent(List: list) -> str:
-    """
-    (v2-Fix) Find the majority vote from a list using collections.Counter.
-    This is now deterministic and correctly handles ties.
-    """
+    """(v2-Fix) Deterministic majority vote using Counter."""
     if not List:
         return None
-    
-    # Use Counter to count frequencies
     counts = Counter(List)
-    
-    # .most_common(1) returns a list of [('item', count)]
     if not counts:
         return None
-        
-    # Get the item with the highest count.
-    # In case of a tie, this is deterministic.
+    # Get the most common item. In case of a tie, Counter returns one of them.
     return counts.most_common(1)[0][0]
 
 def get_ground_truth(gt: str) -> str:
@@ -69,15 +53,10 @@ def get_ground_truth(gt: str) -> str:
     return gt_match.group(1)
 
 def get_final_decision(pred_solutions: list) -> str:
-    """
-    (v2 Fix) Get the final majority vote answer from a list of predictions.
-    This version *only* uses the safer parse_answer function.
-    """
+    """(v2 Fix) Get the final majority vote answer."""
     pred_answers = []
     for pred_solution in pred_solutions:
-        # *** v2 Fix: Only call the safe parser ***
         pred_answer = parse_answer(pred_solution)
-        
         if pred_answer is not None:
             pred_answers.append(pred_answer)
     
@@ -104,11 +83,18 @@ def check_correctness(gt_answer: str, final_pred_answer: str) -> int:
             return 0 # Cannot parse
 
 # =====================================================================================
-# SECTION 2: Data Extractors (v2)
+# SECTION 2: Data Extractors (v2-Final-Fix)
 # =====================================================================================
 
+def _safe_parse_float_from_data(value: any, default: float = 0.0) -> float:
+    """(v2-Final-Fix) Robustly convert a value *from the loaded JSON* to float."""
+    try:
+        return float(value)
+    except (ValueError, TypeError, NameError): # NameError for safety
+        return default
+
 def get_critic_actor_data(response_dict: dict) -> dict:
-    """(v2) Extract data from the v1 (v2) JSON file."""
+    """(v2-Final-Fix) Extract data from the JSON file (handles floats)."""
     results = {}
     for question, data in response_dict.items():
         gt_answer = get_ground_truth(data["ground_truth"])
@@ -119,10 +105,15 @@ def get_critic_actor_data(response_dict: dict) -> dict:
         
         final_decision = get_final_decision(final_solutions)
         
-        # (v2) Store round 1 scores for stalemate analysis
+        # (v2-Final-Fix) Store round 1 scores (now floats)
         r1_scores = []
         if "round_1_results" in data:
-            r1_scores = [item.get("score", {}) for item in data["round_1_results"]]
+            for item in data["round_1_results"]:
+                score_dict = item.get("score", {})
+                r1_scores.append({
+                    "logic_score": _safe_parse_float_from_data(score_dict.get("logic_score")),
+                    "computation_score": _safe_parse_float_from_data(score_dict.get("computation_score"))
+                })
             
         results[question] = {
             "gt_answer": gt_answer,
@@ -134,10 +125,10 @@ def get_critic_actor_data(response_dict: dict) -> dict:
     return results
 
 def get_original_mad_data(response_dict: dict) -> dict:
-    """Extract data from gsm_3_3.json [cite: `gsm_3_3.json`] (with 'content' fix)."""
+    """Extract data from gsm_3_3.json."""
     results = {}
     for question, data in response_dict.items():
-        # Original JSON [cite: `gsm_3_3.json`] structure is [responses_list, gt_string]
+        # Original JSON structure is [responses_list, gt_string]
         if not (isinstance(data, (list, tuple)) and len(data) == 2):
             continue # Skip malformed data
             
@@ -173,21 +164,21 @@ def get_original_mad_data(response_dict: dict) -> dict:
     return results
 
 # =====================================================================================
-# SECTION 3: Main Analysis and Report Generation (v2)
+# SECTION 3: Main Analysis and Report Generation (v2-Final-Fix)
 # =====================================================================================
 
 def main():
     # --- 1. Define filenames ---
-    # ** IMPORTANT: ** Loading 'gsm_critic_actor_3_2.json' as requested.
-    critic_file = 'gsm_critic_actor_3_2.json' # The output from your v1 script
-    original_file = 'gsm_3_3.json'
-    report_file = 'analysis_report_v2.md' # Changed name to v2
+    # These filenames must match your local files exactly
+    critic_file = 'gsm_critic_actor_3_2_v2_final_fix.json' # The output from your new v2-Final-Fix script
+    original_file = 'gsm_3_3.json' # The baseline script
+    report_file = 'analysis_report_v2_final_fix.md'
     
-    # (v2) Define stalemate threshold
-    STALEMATE_THRESHOLD = 2 # Scores are "close" if max - min <= 2
+    # (v2-Final-Fix) Stalemate threshold is now a float
+    STALEMATE_THRESHOLD = 2.0 # Scores are "close" if max - min <= 2.0
 
     print("="*50)
-    print("--- Comprehensive Evaluation Script (v2) ---")
+    print("--- Comprehensive Evaluation Script (v2-Final-Fix) ---")
     print(f"Comparing:")
     print(f"  (A) Original MAD: {original_file}")
     print(f"  (B) New Critic-Actor: {critic_file}")
@@ -203,7 +194,8 @@ def main():
             original_dict = json.load(f)
     except FileNotFoundError as e:
         print(f"❌ Error: File not found {e.filename}.")
-        print("Please make sure both JSON files exist.")
+        print("Please make sure both JSON files exist in this directory.")
+        print(f"HINT: Did you run 'gen_math_critic_actor_v2_final_fix.py' to generate '{critic_file}'?")
         return
     except json.JSONDecodeError as e:
         print(f"❌ Error: Failed to parse JSON {e}. File might be corrupt.")
@@ -221,7 +213,7 @@ def main():
         "loss": [],   # B wrong, A correct
         "correct": [], # Both correct
         "incorrect": [], # Both wrong
-        "stalemate_failures": [] # v2: New category for stalemate analysis
+        "stalemate_failures": [] # Stalemate analysis
     }
 
     original_questions = set(original_results.keys())
@@ -238,7 +230,6 @@ def main():
         critic_res = critic_results[question]
         original_res = original_results[question]
 
-        # Compare scores
         a_correct = original_res["is_correct"]
         b_correct = critic_res["is_correct"]
         
@@ -251,9 +242,8 @@ def main():
         elif b_correct == 0 and a_correct == 0:
             categories["incorrect"].append(question)
             
-        # --- v2: Stalemate Analysis ---
-        # Check if this question was a "stalemate" in Round 1
-        r1_logic_scores = [s.get('logic_score', 0) for s in critic_res.get("round_1_scores", [])]
+        # --- (v2-Final-Fix) Stalemate Analysis (with floats) ---
+        r1_logic_scores = [s.get('logic_score', 0.0) for s in critic_res.get("round_1_scores", [])]
         if r1_logic_scores:
             min_score = min(r1_logic_scores)
             max_score = max(r1_logic_scores)
@@ -276,7 +266,7 @@ def main():
     stalemate_failure_rate = len(categories['stalemate_failures']) / total_stalemate_cases * 100 if total_stalemate_cases > 0 else 0
 
     print("\n" + "="*40)
-    print("--- Comprehensive Evaluation Results (v2) ---")
+    print("--- Comprehensive Evaluation Results (v2-Final-Fix) ---")
     print(f"Total Questions Compared: {total_questions}")
     print("="*40)
     print(f"Original MAD ({original_file}):")
@@ -291,19 +281,19 @@ def main():
     print(f"❌ Loss (Critic-Actor wrong, Original MAD correct): {len(categories['loss'])} questions")
     print(f"👍 Correct (Both Correct): {len(categories['correct'])} questions")
     print(f"👎 Incorrect (Both Incorrect): {len(categories['incorrect'])} questions")
-    print("="*40) # <-- This is the fixed line (was 4G)
-    print("--- v2 Stalemate Analysis ---")
+    print("="*40)
+    print("--- (v2-Final-Fix) Stalemate Analysis ---")
     print(f"Total cases with 'close' (<= {STALEMATE_THRESHOLD}pt diff) R1 scores: {total_stalemate_cases}")
     print(f"Failures in these 'close' score cases: {len(categories['stalemate_failures'])}")
     print(f"Stalemate Failure Rate: {stalemate_failure_rate:.1f}%")
-    print("="*40)
+    print("="*40) # <-- Fixed the '4G' typo here
 
 
     # --- 6. Generate detailed Markdown report ---
     print(f"Generating detailed report: {report_file} ...")
     with open(report_file, 'w', encoding='utf-8') as f:
-        f.write(f"# Experiment Comparison Analysis Report (v2)\n\n")
-        f.write("This document details the performance differences between the `Original MAD` and the `Critic-Actor` (v2) models on the GSM8K task.\n\n")
+        f.write(f"# Experiment Comparison Analysis Report (v2-Final-Fix)\n\n")
+        f.write("This document details the performance differences between the `Original MAD` and the `Critic-Actor` (v2-Final-Fix) models on the GSM8K task.\n\n")
         
         f.write("## Summary\n")
         f.write(f"| Model | Accuracy |\n")
@@ -320,8 +310,8 @@ def main():
         f.write(f"| 👎 Incorrect | Both Incorrect | {len(categories['incorrect'])} |\n\n")
         f.write(f"**Performance Improvement: {improvement:+.1f} percentage points**\n\n")
 
-        # --- v2: Stalemate Report Section ---
-        f.write(f"## v2 Stalemate Analysis\n\n")
+        # --- (v2-Final-Fix) Stalemate Report Section ---
+        f.write(f"## (v2-Final-Fix) Stalemate Analysis\n\n")
         f.write(f"We analyze cases where Round 1 Logic scores were 'close' (max score - min score <= {STALEMATE_THRESHOLD} points), as this may lead to model confusion.\n\n")
         f.write(f"| Metric | Value |\n")
         f.write(f"| :--- | :--- |\n")
@@ -339,7 +329,7 @@ def main():
             if "round_1_results" in critic_data.get("full_data", {}):
                 for j, item in enumerate(critic_data["full_data"]["round_1_results"]):
                     score = item.get("score", {})
-                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A')}, Comp: {score.get('computation_score', 'N/A')})**:\n")
+                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
                     f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
                     f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
             f.write("\n---\n")
@@ -366,17 +356,17 @@ def main():
             if "round_1_results" in critic_data.get("full_data", {}):
                 for j, item in enumerate(critic_data["full_data"]["round_1_results"]):
                     score = item.get("score", {})
-                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A')}, Comp: {score.get('computation_score', 'N/A')})**:\n")
-                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n") # 'N/A' since v1 JSON won't have this
+                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
+                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
                     f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
                     f.write(f"  - Solution:\n```\n{item.get('solution', 'N/A')}\n```\n")
             
             f.write("\n#### Round 2 (Final Solutions and Scores):\n")
             if "final_round_results" in critic_data.get("full_data", {}):
-                for j, item in enumerate(critic_data["full_data"]["final_round_results"]):
+                for j, item in enumerate(critic_data["final_round_results"]):
                     score = item.get("score", {})
-                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A')}, Comp: {score.get('computation_score', 'N/A')})**:\n")
-                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n") # 'N/A' since v1 JSON won't have this
+                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
+                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
                     f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
                     f.write(f"  - Solution:\n```\n{item.get('solution', 'N/A')}\n```\n")
             f.write("\n---\n")
