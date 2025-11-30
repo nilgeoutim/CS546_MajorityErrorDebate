@@ -87,14 +87,10 @@ def compute_accuracy(gt, pred_solution):
         pred_answer = most_frequent(pred_answers)
         # print("pred answer: ", pred_answer)
         # pred_answer = pred_answers[0]
-    else:
-        pred_answer = parse_answer(pred_solution)
-        if pred_answer is None:
-            pred_answer = solve_math_problems(pred_solution)
 
     if pred_answer is None:
         # return 1    # why return 1 here?
-        return 0
+        return None
 
     # try:
     if float(answers) == float(pred_answer):
@@ -120,11 +116,14 @@ def most_frequent(List):
     return num
 
 if __name__ == "__main__":
-    response_dict = json.load(open("gsm_debate_3_3.json", "r"))
+    file_name = "results/gsm_3_3.json"
+    response_dict = json.load(open(file_name, "r"))
 
     questions = list(response_dict.keys())
 
-    accuracies = []
+    correct = 0
+    incorrect = 0
+    format_error = 0
 
     for question in questions:
         responses, gt = response_dict[question]
@@ -132,17 +131,18 @@ if __name__ == "__main__":
         pred_solutions = []
         for response in responses:
             pred_solution = response[-1]['content']
-
             pred_solutions.append(pred_solution)
 
         accurate = compute_accuracy(gt, pred_solutions)
 
-        if accurate is not None:
-            accuracies.append(float(accurate))
-        else:
-            import pdb
-            pdb.set_trace()
-            print(gt)
+        if accurate is None:
+            format_error += 1
+        elif accurate == 1:
+            correct += 1
+        elif accurate == 0:
+            incorrect += 1
 
-        print("accuracies:", np.mean(accuracies), np.std(accuracies) / (len(accuracies) ** 0.5))
+    # print("accuracies:", np.mean(accuracies), np.std(accuracies) / (len(accuracies) ** 0.5))
+    print(file_name)
+    print(f"correct: {correct}\nincorrect: {incorrect}\nformat error: {format_error}")
 

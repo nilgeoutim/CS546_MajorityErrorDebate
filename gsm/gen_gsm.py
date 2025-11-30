@@ -4,6 +4,9 @@ import torch
 import json
 import numpy as np
 import random
+from tqdm import tqdm
+from transformers import AutoTokenizer
+from vllm import LLM, SamplingParams
 
 def construct_message(agents, question, idx):
     if len(agents) == 0:
@@ -23,7 +26,8 @@ def construct_message(agents, question, idx):
 
 def construct_assistant_message(completion):
     # content = completion["choices"][0]["message"]["content"]
-    content = completion[0]["generated_text"][-1]
+    # content = completion[0]["generated_text"][-1] # transformers
+    content = completion.outputs[0].text
     return {"role": "assistant", "content": content}
 
 
@@ -38,11 +42,24 @@ if __name__ == "__main__":
     random.seed(0)
 
     model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-    pipeline = transformers.pipeline(
-        "text-generation",
+    # # transformers
+    # pipeline = transformers.pipeline(
+    #     "text-generation",
+    #     model=model_id,
+    #     model_kwargs={"dtype": torch.bfloat16}, # torch_dtype is deprecated
+    #     device_map="auto",
+    # )
+    # pipeline.tokenizer.pad_token_id = pipeline.tokenizer.eos_token_id
+
+    # vllm Python API
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    llm = LLM(
         model=model_id,
-        model_kwargs={"torch_dtype": torch.bfloat16},
-        device_map="auto",
+        dtype="bfloat16",
+        gpu_memory_utilization=0.9,
+    )
+    sampling_params = SamplingParams(
+        max_tokens=512,
     )
 
     generated_description = {}
@@ -50,7 +67,7 @@ if __name__ == "__main__":
     questions = read_jsonl("gsm_test.jsonl")
     random.shuffle(questions)
 
-    for data in questions[:100]:
+    for data in tqdm(questions[:100], desc="Processing questions"):
         question = data['question']
         answer = data['answer']
 
@@ -59,30 +76,40 @@ if __name__ == "__main__":
                            for agent in range(agents)]
 
         for round in range(rounds):
+            prompts = []
             for i, agent_context in enumerate(agent_contexts):
-
                 if round != 0:
                     agent_contexts_other = agent_contexts[:i] + agent_contexts[i+1:]
-                    message = construct_message(agent_contexts_other, question, 2*round - 1)
+                    message = construct_message(agent_contexts_other, question, 2*round) # no -1 because there's an additional system prompt
                     agent_context.append(message)
-
-                # completion = openai.ChatCompletion.create(
-                #           model="gpt-3.5-turbo-0301",
-                #           messages=agent_context,
-                #           n=1)
-                completion = pipeline(
-                    agent_context,
-                    max_new_tokens=256,
+                # vllm
+                prompt = tokenizer.apply_chat_template(
+                    agent_context, 
+                    tokenize=False, 
+                    add_generation_prompt=True
                 )
+                prompts.append(prompt)
 
-                assistant_message = construct_assistant_message(completion)
-                agent_context.append(assistant_message)
+            # # transformer
+            # completions = pipeline(
+            #     prompts,
+            #     max_new_tokens=256,
+            #     pad_token_id=pipeline.tokenizer.eos_token_id,
+            #     batch_size=agents,
+            # )
+
+            # vllm Python API
+            outputs = llm.generate(prompts, sampling_params, use_tqdm=False)
+
+            for i, out in enumerate(outputs):
+                assistant_message = construct_assistant_message(out)
+                agent_contexts[i].append(assistant_message)
 
         generated_description[question] = (agent_contexts, answer)
 
-    json.dump(generated_description, open("gsm_{}_{}.json".format(agents, rounds), "w"))
+    json.dump(generated_description, open("results/gsm_{}_{}.json".format(agents, rounds), "w"))
 
-    import pdb
-    pdb.set_trace()
-    print(answer)
-    print(agent_context)
+    # import pdb
+    # pdb.set_trace()
+    # print(answer)
+    # print(agent_context)
