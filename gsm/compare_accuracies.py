@@ -156,9 +156,9 @@ def get_majority_error_data(data_list: list) -> dict:
 
 def main():
     # --- 1. Define filenames ---
-    critic_file = 'gsm/gsm_critic_actor_3_5.json' 
+    critic_file = 'gsm/gsm_critic_actor_3_7.json' 
     original_file = 'gsm/gsm_majority_error.jsonl'
-    report_file = 'gsm/analysis_report_3_5_majority_error.md'
+    report_file = 'gsm/analysis_report_3_7_majority_error.md'
     
     STALEMATE_THRESHOLD = 2.0 # Scores are "close" if max - min <= 2.0
 
