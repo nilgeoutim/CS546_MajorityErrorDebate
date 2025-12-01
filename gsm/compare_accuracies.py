@@ -1,37 +1,37 @@
 import json
-import numpy as np
 import re
-from tqdm import tqdm
 import os
-from collections import Counter # Import Counter for a deterministic 'most_frequent'
+from collections import Counter
+import numpy as np
+from tqdm import tqdm
 
 # =====================================================================================
-#  SECTION 1: Core Evaluation Functions (v2-Final-Fix)
+# SECTION 1: Helper Functions
 # =====================================================================================
 
-def parse_answer(input_str: str) -> str:
-    """(v2) Safer answer parser."""
-    if not isinstance(input_str, str):
+def parse_answer(solution_text: str) -> str:
+    """
+    Extracts the answer from the solution text.
+    Expects the answer to be in the format '#### [answer]'.
+    """
+    if not solution_text:
         return None
-    # Pattern 1: \boxed{...}
-    pattern_boxed = r"\\boxed\{([0-9.,$]*)\}"
-    matches = re.findall(pattern_boxed, input_str)
-    solution = None
-    for match_str in matches[::-1]:
-        solution = re.sub(r"[^0-9.]", "", match_str)
-        if solution:
-            return solution # Found \boxed{}, return immediately
-
-    # Pattern 2: Number at the end of the string
-    pattern_final_num = r"(\d+\.?\d*)\s*$"
-    matches = re.findall(pattern_final_num, input_str)
-    if matches:
-        return matches[-1]
+    
+    # Look for the standard GSM8K delimiter
+    match = re.search(r"####\s*(.+)", solution_text)
+    if match:
+        return match.group(1).strip()
+    
+    # Fallback: look for the last number in the text
+    # This is less reliable but useful if the model forgets the delimiter
+    numbers = re.findall(r"[-+]?\d*\.\d+|\d+", solution_text)
+    if numbers:
+        return numbers[-1]
         
     return None
 
 def most_frequent(List: list) -> str:
-    """(v2-Fix) Deterministic majority vote using Counter."""
+    """Deterministic majority vote using Counter."""
     if not List:
         return None
     counts = Counter(List)
@@ -53,7 +53,7 @@ def get_ground_truth(gt: str) -> str:
     return gt_match.group(1)
 
 def get_final_decision(pred_solutions: list) -> str:
-    """(v2 Fix) Get the final majority vote answer."""
+    """Get the final majority vote answer."""
     pred_answers = []
     for pred_solution in pred_solutions:
         pred_answer = parse_answer(pred_solution)
@@ -82,19 +82,24 @@ def check_correctness(gt_answer: str, final_pred_answer: str) -> int:
         except (ValueError, TypeError):
             return 0 # Cannot parse
 
+def read_jsonl(path: str) -> list:
+    """Reads a JSONL file."""
+    with open(path, 'r', encoding='utf-8') as fh:
+        return [json.loads(line) for line in fh.readlines() if line]
+
 # =====================================================================================
-# SECTION 2: Data Extractors (v2-Final-Fix)
+# SECTION 2: Data Extractors
 # =====================================================================================
 
 def _safe_parse_float_from_data(value: any, default: float = 0.0) -> float:
-    """(v2-Final-Fix) Robustly convert a value *from the loaded JSON* to float."""
+    """Robustly convert a value *from the loaded JSON* to float."""
     try:
         return float(value)
     except (ValueError, TypeError, NameError): # NameError for safety
         return default
 
 def get_critic_actor_data(response_dict: dict) -> dict:
-    """(v2-Final-Fix) Extract data from the JSON file (handles floats)."""
+    """Extract data from the JSON file (handles floats)."""
     results = {}
     for question, data in response_dict.items():
         gt_answer = get_ground_truth(data["ground_truth"])
@@ -105,7 +110,7 @@ def get_critic_actor_data(response_dict: dict) -> dict:
         
         final_decision = get_final_decision(final_solutions)
         
-        # (v2-Final-Fix) Store round 1 scores (now floats)
+        # Store round 1 scores (now floats)
         r1_scores = []
         if "round_1_results" in data:
             for item in data["round_1_results"]:
@@ -124,87 +129,61 @@ def get_critic_actor_data(response_dict: dict) -> dict:
         }
     return results
 
-def get_original_mad_data(response_dict: dict) -> dict:
-    """Extract data from gsm_3_3.json."""
+def get_majority_error_data(data_list: list) -> dict:
+    """Extract data from gsm_majority_error.jsonl."""
     results = {}
-    for question, data in response_dict.items():
-        # Original JSON structure is [responses_list, gt_string]
-        if not (isinstance(data, (list, tuple)) and len(data) == 2):
-            continue # Skip malformed data
-            
-        responses, gt = data
-        gt_answer = get_ground_truth(gt)
+    for item in data_list:
+        question = item.get('question')
+        gt_str = item.get('answer')
+        gt_answer = get_ground_truth(gt_str)
         
-        pred_solutions = []
-        if not isinstance(responses, list):
-            continue # Skip malformed 'responses'
-            
-        for response_context_list in responses:
-            if not (isinstance(response_context_list, list) and len(response_context_list) > 0):
-                continue
-            
-            # Fix: Handle 'content' being a dict or a string
-            content_value = response_context_list[-1].get('content') # Use .get() for safety
-            
-            if isinstance(content_value, dict) and 'content' in content_value:
-                pred_solutions.append(content_value['content']) # Nested content
-            elif isinstance(content_value, str):
-                pred_solutions.append(content_value) # Direct string
-            else:
-                pred_solutions.append("") # Add empty string
-        
-        final_decision = get_final_decision(pred_solutions)
+        # For majority error dataset, we assume the "original" model failed.
+        # We don't have the original wrong answer, so we set final_decision to None
+        # to ensure it counts as incorrect.
+        final_decision = None 
         
         results[question] = {
             "gt_answer": gt_answer,
             "final_decision": final_decision,
-            "is_correct": check_correctness(gt_answer, final_decision),
-            "full_data": {"final_solutions": pred_solutions} # Store data for reporting
+            "is_correct": 0, # Always wrong for this dataset
+            "full_data": item
         }
     return results
 
 # =====================================================================================
-# SECTION 3: Main Analysis and Report Generation (v2-Final-Fix)
+# SECTION 3: Main Analysis and Report Generation
 # =====================================================================================
 
 def main():
     # --- 1. Define filenames ---
-    # These filenames must match your local files exactly
-    critic_file = 'gsm_critic_actor_3_2_v2_final_fix.json' # The output from your new v2-Final-Fix script
-    original_file = 'gsm_3_3.json' # The baseline script
-    report_file = 'analysis_report_v2_final_fix.md'
+    critic_file = 'gsm/gsm_critic_actor_3_5.json' 
+    original_file = 'gsm/gsm_majority_error.jsonl'
+    report_file = 'gsm/analysis_report_3_5_majority_error.md'
     
-    # (v2-Final-Fix) Stalemate threshold is now a float
     STALEMATE_THRESHOLD = 2.0 # Scores are "close" if max - min <= 2.0
 
     print("="*50)
-    print("--- Comprehensive Evaluation Script (v2-Final-Fix) ---")
-    print(f"Comparing:")
-    print(f"  (A) Original MAD: {original_file}")
-    print(f"  (B) New Critic-Actor: {critic_file}")
-    print(f"Stalemate Threshold: {STALEMATE_THRESHOLD}")
-    print("="*50)
-
-    # --- 2. Load JSON files ---
-    print("Loading JSON files...")
+    print("--- Comprehensive Evaluation Script (Majority Error) ---")
+    print("Loading files...")
+    
     try:
         with open(critic_file, 'r', encoding='utf-8') as f:
             critic_dict = json.load(f)
-        with open(original_file, 'r', encoding='utf-8') as f:
-            original_dict = json.load(f)
+        
+        # Load original file as JSONL
+        original_list = read_jsonl(original_file)
+        
     except FileNotFoundError as e:
-        print(f"❌ Error: File not found {e.filename}.")
-        print("Please make sure both JSON files exist in this directory.")
-        print(f"HINT: Did you run 'gen_math_critic_actor_v2_final_fix.py' to generate '{critic_file}'?")
+        print(f"Error: File not found {e.filename}.")
         return
     except json.JSONDecodeError as e:
-        print(f"❌ Error: Failed to parse JSON {e}. File might be corrupt.")
+        print(f"Error: Failed to parse JSON {e}. File might be corrupt.")
         return
     
-    print("✅ Files loaded. Extracting data...")
+    print("Files loaded. Extracting data...")
     # --- 3. Extract and process data ---
     critic_results = get_critic_actor_data(critic_dict)
-    original_results = get_original_mad_data(original_dict)
+    original_results = get_majority_error_data(original_list)
 
     # --- 4. Compare models question by question ---
     print("Comparing models question by question...")
@@ -221,7 +200,9 @@ def main():
     common_questions = list(original_questions & critic_questions)
     
     if not common_questions:
-        print("❌ Error: No common questions found in the two JSON files.")
+        print("Error: No common questions found in the two files.")
+        print(f"Original questions: {len(original_questions)}")
+        print(f"Critic questions: {len(critic_questions)}")
         return
 
     total_stalemate_cases = 0
@@ -242,7 +223,7 @@ def main():
         elif b_correct == 0 and a_correct == 0:
             categories["incorrect"].append(question)
             
-        # --- (v2-Final-Fix) Stalemate Analysis (with floats) ---
+        # --- Stalemate Analysis ---
         r1_logic_scores = [s.get('logic_score', 0.0) for s in critic_res.get("round_1_scores", [])]
         if r1_logic_scores:
             min_score = min(r1_logic_scores)
@@ -252,105 +233,153 @@ def main():
             if (max_score - min_score) <= STALEMATE_THRESHOLD:
                 total_stalemate_cases += 1
                 
-                # Check if this "stalemate" case resulted in a failure
-                if not b_correct: # b_correct == 0
-                    categories["stalemate_failures"].append(question)
-        # --- End Stalemate Analysis ---
-
     # --- 5. Print terminal summary ---
     total_questions = len(common_questions)
     
+    # Calculate accuracy
     acc_original = (len(categories['loss']) + len(categories['correct'])) / total_questions * 100 if total_questions > 0 else 0
     acc_critic = (len(categories['win']) + len(categories['correct'])) / total_questions * 100 if total_questions > 0 else 0
     improvement = acc_critic - acc_original
     stalemate_failure_rate = len(categories['stalemate_failures']) / total_stalemate_cases * 100 if total_stalemate_cases > 0 else 0
 
     print("\n" + "="*40)
-    print("--- Comprehensive Evaluation Results (v2-Final-Fix) ---")
+    print("--- Evaluation Results ---")
     print(f"Total Questions Compared: {total_questions}")
     print("="*40)
-    print(f"Original MAD ({original_file}):")
+    print(f"Original (Majority Error Baseline):")
     print(f"  - Accuracy: {acc_original:.1f}%")
-    print(f"Critic-Actor ({critic_file}):")
+    print(f"Critic-Actor (New Model):")
     print(f"  - Accuracy: {acc_critic:.1f}%")
     print("="*40)
-    print(f"Performance Improvement (Critic-Actor vs. Original): {improvement:+.1f} percentage points")
+    print(f"Performance Improvement: {improvement:+.1f} percentage points")
     print("="*40)
     print("--- Detailed Categorization ---")
-    print(f"✅ Win (Critic-Actor correct, Original MAD wrong): {len(categories['win'])} questions")
-    print(f"❌ Loss (Critic-Actor wrong, Original MAD correct): {len(categories['loss'])} questions")
-    print(f"👍 Correct (Both Correct): {len(categories['correct'])} questions")
-    print(f"👎 Incorrect (Both Incorrect): {len(categories['incorrect'])} questions")
+    print(f"Win (New Correct, Old Wrong): {len(categories['win'])}")
+    print(f"Loss (New Wrong, Old Correct): {len(categories['loss'])}")
+    print(f"Correct (Both Correct): {len(categories['correct'])}")
+    print(f"Incorrect (Both Incorrect): {len(categories['incorrect'])}")
     print("="*40)
-    print("--- (v2-Final-Fix) Stalemate Analysis ---")
+    print("--- Stalemate Analysis ---")
     print(f"Total cases with 'close' (<= {STALEMATE_THRESHOLD}pt diff) R1 scores: {total_stalemate_cases}")
     print(f"Failures in these 'close' score cases: {len(categories['stalemate_failures'])}")
     print(f"Stalemate Failure Rate: {stalemate_failure_rate:.1f}%")
-    print("="*40) # <-- Fixed the '4G' typo here
+    print("="*40)
+
+    # --- 6. Weighted Voting Simulation (Risk/Reward Analysis) ---
+    print("\n" + "="*40)
+    print("--- Weighted Voting Simulation (Risk/Reward) ---")
+    
+    fixed_cases = []   # Majority Wrong -> Weighted Correct (GAIN)
+    broken_cases = []  # Majority Correct -> Weighted Wrong (LOSS)
+    
+    # Calibration Stats
+    correct_confidences = []
+    incorrect_confidences = []
+
+    for question in common_questions:
+        data = critic_results[question]
+        gt_answer = data['gt_answer']
+        majority_decision = data['final_decision']
+        
+        # Get weighted decision
+        final_round_results = data['full_data'].get('final_round_results', [])
+        
+        # Aggregate scores by answer
+        answer_scores = {}
+        
+        for item in final_round_results:
+            sol = item.get('solution', '')
+            ans = parse_answer(sol)
+            if ans is None: continue
+            
+            score = item.get('score', {})
+            logic = _safe_parse_float_from_data(score.get('logic_score'))
+            comp = _safe_parse_float_from_data(score.get('computation_score'))
+            total_weight = logic + comp # Simple sum weighting
+            
+            if ans not in answer_scores:
+                answer_scores[ans] = 0.0
+            answer_scores[ans] += total_weight
+            
+            # Calibration tracking
+            # We want to check if the *individual agent's* answer is correct
+            is_ans_correct = check_correctness(gt_answer, ans)
+            if is_ans_correct:
+                correct_confidences.append(total_weight)
+            else:
+                incorrect_confidences.append(total_weight)
+
+        # Find best weighted answer
+        weighted_decision = None
+        if answer_scores:
+            weighted_decision = max(answer_scores, key=answer_scores.get)
+            
+        # Compare outcomes
+        majority_correct = check_correctness(gt_answer, majority_decision)
+        weighted_correct = check_correctness(gt_answer, weighted_decision)
+        
+        if not majority_correct and weighted_correct:
+            fixed_cases.append(question)
+        elif majority_correct and not weighted_correct:
+            broken_cases.append(question)
+
+    print(f"GAIN (Fixed): {len(fixed_cases)} cases")
+    print(f"LOSS (Broken): {len(broken_cases)} cases")
+    print(f"Net Improvement: {len(fixed_cases) - len(broken_cases)} cases")
+    
+    # Calibration Report
+    avg_correct_conf = sum(correct_confidences)/len(correct_confidences) if correct_confidences else 0
+    avg_incorrect_conf = sum(incorrect_confidences)/len(incorrect_confidences) if incorrect_confidences else 0
+    
+    print("\n--- Calibration Analysis ---")
+    print(f"Avg Confidence (Logic+Comp) for CORRECT answers:   {avg_correct_conf:.2f} / 20.0")
+    print(f"Avg Confidence (Logic+Comp) for INCORRECT answers: {avg_incorrect_conf:.2f} / 20.0")
+    print(f"Delta (Signal Strength): {avg_correct_conf - avg_incorrect_conf:.2f}")
+    print("="*40)
 
 
-    # --- 6. Generate detailed Markdown report ---
+    # --- 7. Generate detailed Markdown report ---
     print(f"Generating detailed report: {report_file} ...")
     with open(report_file, 'w', encoding='utf-8') as f:
-        f.write(f"# Experiment Comparison Analysis Report (v2-Final-Fix)\n\n")
-        f.write("This document details the performance differences between the `Original MAD` and the `Critic-Actor` (v2-Final-Fix) models on the GSM8K task.\n\n")
+        f.write(f"# Experiment Analysis Report: Majority Error Dataset\n\n")
+        f.write("This document details the performance of the `Critic-Actor` model on 100 difficult questions from `gsm_majority_error.jsonl`.\n\n")
         
         f.write("## Summary\n")
         f.write(f"| Model | Accuracy |\n")
         f.write(f"| :--- | :--- |\n")
-        f.write(f"| Original MAD ({original_file}) | {acc_original:.1f}% |\n")
-        f.write(f"| Critic-Actor ({critic_file}) | {acc_critic:.1f}% |\n\n")
+        f.write(f"| Original Baseline | {acc_original:.1f}% |\n")
+        f.write(f"| Critic-Actor (New) | {acc_critic:.1f}% |\n\n")
         
         f.write("## Categorized Statistics\n")
         f.write(f"| Category | Description | Count |\n")
         f.write(f"| :--- | :--- | :--- |\n")
-        f.write(f"| ✅ Win | Critic-Actor correct, Original MAD wrong | {len(categories['win'])} |\n")
-        f.write(f"| ❌ Loss | Critic-Actor wrong, Original MAD correct | {len(categories['loss'])} |\n")
-        f.write(f"| 👍 Correct | Both Correct | {len(categories['correct'])} |\n")
-        f.write(f"| 👎 Incorrect | Both Incorrect | {len(categories['incorrect'])} |\n\n")
+        f.write(f"| Win | Critic-Actor correct | {len(categories['win'])} |\n")
+        f.write(f"| Incorrect | Critic-Actor incorrect | {len(categories['incorrect'])} |\n\n")
         f.write(f"**Performance Improvement: {improvement:+.1f} percentage points**\n\n")
 
-        # --- (v2-Final-Fix) Stalemate Report Section ---
-        f.write(f"## (v2-Final-Fix) Stalemate Analysis\n\n")
-        f.write(f"We analyze cases where Round 1 Logic scores were 'close' (max score - min score <= {STALEMATE_THRESHOLD} points), as this may lead to model confusion.\n\n")
+        # --- Stalemate Report Section ---
+        f.write(f"## Stalemate Analysis\n\n")
+        f.write(f"We analyze cases where Round 1 Logic scores were 'close' (max score - min score <= {STALEMATE_THRESHOLD} points).\n\n")
         f.write(f"| Metric | Value |\n")
         f.write(f"| :--- | :--- |\n")
         f.write(f"| Total 'close score' cases | {total_stalemate_cases} |\n")
         f.write(f"| Failures in these cases | {len(categories['stalemate_failures'])} |\n")
         f.write(f"| **Stalemate Failure Rate** | **{stalemate_failure_rate:.1f}%** |\n\n")
-        f.write("A high stalemate failure rate suggests our model struggles to break ties when scores are not clearly differentiated. Below are the specific cases that failed.\n\n")
         
-        for i, question in enumerate(categories["stalemate_failures"]):
-            critic_data = critic_results[question]
-            f.write(f"### Stalemate Failure #{i+1}: {question}\n\n")
-            f.write(f"**Ground Truth (GT):** `{critic_data.get('gt_answer', 'N/A')}`\n")
-            f.write(f"**Critic-Actor Decision (Wrong):** `{critic_data.get('final_decision', 'N/A')}`\n\n")
-            f.write("#### Round 1 (Initial Solutions and Scores):\n")
-            if "round_1_results" in critic_data.get("full_data", {}):
-                for j, item in enumerate(critic_data["full_data"]["round_1_results"]):
-                    score = item.get("score", {})
-                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
-                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
-                    f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
-            f.write("\n---\n")
-
-        # --- Detailed Analysis: Loss Cases ---
+        # --- Detailed Analysis: Win Cases ---
         f.write("="*20 + "\n\n")
-        f.write(f"## ❌ All Other Failure Cases (Losses) - {len(categories['loss'])} Questions\n\n")
-        f.write("In these cases, the **Original MAD was correct**, but the **Critic-Actor model was wrong**.\n\n")
-        
-        if not categories["loss"]:
-            f.write("No failure cases found! 🎉\n\n")
-            
-        for i, question in enumerate(categories["loss"]):
+        f.write(f"## Success Cases (Wins) - {len(categories['win'])} Questions\n\n")
+        f.write("In these cases, the Critic-Actor model correctly solved the difficult problem.\n\n")
+
+        if not categories["win"]:
+            f.write("No success cases found.\n\n")
+
+        for i, question in enumerate(categories["win"]):
             critic_data = critic_results[question]
-            original_data = original_results[question]
             
-            f.write(f"### Loss #{i+1}: {question}\n\n")
-            f.write(f"**Ground Truth (GT):** `{critic_data.get('gt_answer', 'N/A')}`\n\n")
-            f.write(f"**Original MAD Decision (Correct):** `{original_data.get('final_decision', 'N/A')}`\n")
-            f.write(f"**Critic-Actor Decision (Wrong):** `{critic_data.get('final_decision', 'N/A')}`\n\n")
-            f.write(f"**Detailed Data (Critic-Actor Model):**\n")
+            f.write(f"### Win #{i+1}: {question}\n\n")
+            f.write(f"**Ground Truth (GT):** `{critic_data.get('gt_answer', 'N/A')}`\n")
+            f.write(f"**Critic-Actor Decision:** `{critic_data.get('final_decision', 'N/A')}`\n\n")
             
             f.write("#### Round 1 (Initial Solutions and Scores):\n")
             if "round_1_results" in critic_data.get("full_data", {}):
@@ -363,7 +392,7 @@ def main():
             
             f.write("\n#### Round 2 (Final Solutions and Scores):\n")
             if "final_round_results" in critic_data.get("full_data", {}):
-                for j, item in enumerate(critic_data["final_round_results"]):
+                for j, item in enumerate(critic_data["full_data"]["final_round_results"]):
                     score = item.get("score", {})
                     f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
                     f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
@@ -371,20 +400,41 @@ def main():
                     f.write(f"  - Solution:\n```\n{item.get('solution', 'N/A')}\n```\n")
             f.write("\n---\n")
 
-        # --- Detailed Analysis: Win Cases ---
+        # --- Detailed Analysis: Incorrect Cases ---
         f.write("="*20 + "\n\n")
-        f.write(f"## ✅ Success Case Analysis (Wins) - {len(categories['win'])} Questions\n\n")
-        f.write("In these cases, the **Original MAD was wrong**, but the **Critic-Actor model was correct**. This validates the new framework.\n\n")
+        f.write(f"## Failure Cases (Incorrect) - {len(categories['incorrect'])} Questions\n\n")
+        f.write("In these cases, the Critic-Actor model failed to solve the problem.\n\n")
+        
+        if not categories["incorrect"]:
+            f.write("No failure cases found!\n\n")
+            
+        for i, question in enumerate(categories["incorrect"]):
+            critic_data = critic_results[question]
+            
+            f.write(f"### Failure #{i+1}: {question}\n\n")
+            f.write(f"**Ground Truth (GT):** `{critic_data.get('gt_answer', 'N/A')}`\n")
+            f.write(f"**Critic-Actor Decision:** `{critic_data.get('final_decision', 'N/A')}`\n\n")
+            f.write(f"**Detailed Data (Critic-Actor Model):**\n")
+            
+            f.write("#### Round 1 (Initial Solutions and Scores):\n")
+            if "round_1_results" in critic_data.get("full_data", {}):
+                for j, item in enumerate(critic_data["full_data"]["round_1_results"]):
+                    score = item.get("score", {})
+                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
+                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
+                    f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
+            
+            f.write("\n#### Round 2 (Final Solutions and Scores):\n")
+            if "final_round_results" in critic_data.get("full_data", {}):
+                for j, item in enumerate(critic_data["full_data"]["final_round_results"]):
+                    score = item.get("score", {})
+                    f.write(f"**Agent {j+1} (Logic: {score.get('logic_score', 'N/A'):.1f}, Comp: {score.get('computation_score', 'N/A'):.1f})**:\n")
+                    f.write(f"  - Verification: {score.get('verification_step', 'N/A')}\n")
+                    f.write(f"  - Critique: {score.get('critique', 'N/A')}\n")
+                    f.write(f"  - Solution:\n```\n{item.get('solution', 'N/A')}\n```\n")
+            f.write("\n---\n")
 
-        if not categories["win"]:
-            f.write("No success cases found.\n\n")
-
-        for i, question in enumerate(categories["win"]):
-            # (Omitted for brevity, but the logic is the same as the Loss section)
-            pass
-
-    print(f"✅ Success! Detailed report saved to: {report_file}")
-    print("Please open the file to analyze the new 'Stalemate' and 'Loss' cases.")
+    print(f"Success! Detailed report saved to: {report_file}")
 
 if __name__ == "__main__":
     main()

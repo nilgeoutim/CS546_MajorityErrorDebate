@@ -34,13 +34,13 @@ if __name__ == "__main__":
     agents = 5
     rounds = 4
     # random.seed(0)
+
     generated_description = {}
 
     questions = read_jsonl("gsm_majority_error.jsonl")
     # random.shuffle(questions)
 
-    # same for here can use 100 for smoke test, then full set for final run
-    for data in tqdm(questions):
+    for data in tqdm(questions[:100]): # previously: [:100]
         question = data['question']
         answer = data['answer']
 

@@ -1,11 +1,11 @@
-import transformers
-import torch
+import openai
 import json
 import numpy as np
 import random
 from tqdm import tqdm
 import re
 import time
+import os
 
 # =====================================================================================
 #  SECTION 1: Prompt Construction (v2-Final-Fix)
@@ -65,8 +65,8 @@ Your Solution:
 {self_solution}
 ```
 Your Scores:
-- Logic: {self_logic:.1f}/10.0
-- Computation: {self_comp:.1f}/10.0
+- Logic: {self_logic} / 10.0
+- Computation: {self_comp} / 10.0
 - Critique: {self_critique}
 """
 
@@ -86,8 +86,8 @@ Agent {i+1}'s Solution:
 {other_solution}
 ```
 Agent {i+1}'s Scores:
-- Logic: {other_logic:.1f}/10.0
-- Computation: {other_comp:.1f}/10.0
+- Logic: {other_logic} / 10.0
+- Computation: {other_comp} / 10.0
 - Critique: {other_critique}
 ---
 """
@@ -166,14 +166,15 @@ def parse_critic_output(text: str) -> dict:
             if match:
                 json_str = match.group(0)
             else:
-                # If no JSON block or curly braces are found
-                print(f"\n[Warning] No JSON found in critic output.\nText was: {text}\n")
+                print(f"\n[Warning] JSON not found in output.\nText was: {text}\n")
                 return default_score
 
-        # Now, try to load the found json_str
+        # Parse JSON
         data = json.loads(json_str)
         
-        if 'logic_score' in data and 'computation_score' in data and 'critique' in data and 'verification_step' in data:
+        # Validate keys
+        required_keys = ["verification_step", "logic_score", "computation_score", "critique"]
+        if all(k in data for k in required_keys):
             return {
                 "verification_step": str(data.get("verification_step", "")),
                 "logic_score": _safe_parse_float(data.get("logic_score")),
@@ -188,81 +189,71 @@ def parse_critic_output(text: str) -> dict:
         print(f"\n[Warning] Failed to parse critic JSON: {e}\nText was: {text}\n")
         return default_score
 
-def call_pipeline(pipeline, messages, gen_config):
+def call_openai_api(client, messages, gen_config, model_id):
     """
-    (v2-Final-Fix) Helper function to call the generation pipeline.
-    Now takes a gen_config dict for all parameters.
+    (v2-Final-Fix) Helper function to call the OpenAI API.
+    Replaces the previous Hugging Face pipeline call.
     """
-    terminators = [
-        pipeline.tokenizer.eos_token_id, 
-        pipeline.tokenizer.convert_tokens_to_ids("<|end_of_text|>")
-    ]
-    
-    outputs = pipeline(
-        messages,
-        max_new_tokens=gen_config['max_tokens'],
-        eos_token_id=terminators,
-        do_sample=gen_config['do_sample'],
-        temperature=gen_config['temp'],
-        top_p=gen_config['top_p'],
-    )
-    
-    generated_text = outputs[0]["generated_text"][-1]['content']
-    return generated_text
+    try:
+        completion = client.chat.completions.create(
+            model=model_id,
+            messages=messages,
+            max_tokens=gen_config['max_tokens'],
+            # temperature=gen_config.get('temp', 1.0), # Removed per user request
+            # top_p=gen_config.get('top_p', 1.0),      # Default to 1.0 if None
+            n=1
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling OpenAI API: {e}")
+        return ""
 
 # =====================================================================================
-#  SECTION 3: Main Execution
+#  SECTION 3: Main Execution Block (Restored)
 # =====================================================================================
 
 if __name__ == "__main__":
-    # --- 1. All Configuration Parameters (Refactored) ---
+    # Configuration
     config = {
-        "agents": 3,
-        "model_id": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-        "data_file": "gsm_test.jsonl",
-        "output_file": f"gsm_critic_actor_3_2_v2_final_fix.json", # v2-Final-Fix output
-        "questions_to_process": 100 # Set to full list length if needed
+        'agents': 3,
+        'rounds': 4,
+        'model_id': 'gpt-3.5-turbo',
+        'data_file': 'gsm/gsm_majority_error.jsonl',
+        'output_file': 'gsm/gsm_critic_actor_3_5.json',
+        'questions_to_process': 100
     }
     
-    # Generation config for Actors (diverse, creative)
+    # Generation Config - Increased max_tokens to fix parsing errors
     actor_gen_config = {
-        "max_tokens": max_tokens, 
-        "do_sample": False,
-        "temp": None,
-        "top_p": None
+        'max_tokens': 4096
     }
-    
-    # Generation config for Critics (deterministic, structured)
     critic_gen_config = {
-        "max_tokens": 256,
-        "do_sample": False,
-        "temp": None,
-        "top_p": None
+        'max_tokens': 4096
     }
-    
-    print("="*50)
-    print(f"Starting Critic-Actor (v2-Final-Fix) Experiment")
-    print(f"Model: {config['model_id']}")
-    print(f"Agent Count: {config['agents']}")
-    print(f"Output File: {config['output_file']}")
-    print("="*50)
 
-    # --- 2. Load Model ---
-    print("Loading Llama 3.1, please wait...")
-    pipeline = transformers.pipeline(
-        "text-generation",
-        model=config['model_id'],
-        model_kwargs={"torch_dtype": torch.bfloat16},
-        device_map="auto",
+    # Initialize OpenAI Client
+    # Using the key found in gen_gsm.py as a fallback/default
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("Error: OPENAI_API_KEY environment variable not set.")
+        exit(1)
+        
+    client = openai.OpenAI(
+        api_key=api_key
     )
-    print("✅ Llama 3.1 Loaded.")
+
+    print("="*50)
+    print(f"Starting Experiment: {config['output_file']}")
+    print(f"Model: {config['model_id']}")
+    print(f"Agents: {config['agents']}, Rounds: {config['rounds']}")
+    print("="*50)
 
     # --- 3. Load Data ---
     print(f"Loading data from {config['data_file']}...")
     try:
         questions = read_jsonl(config['data_file'])
-        random.seed(0)
-        random.shuffle(questions)
+        # random.seed(0)
+        # random.shuffle(questions) # NO SHUFFLE
         questions_subset = questions[:config['questions_to_process']]
         print(f"✅ Data Loaded. Processing {len(questions_subset)} problems.")
     except FileNotFoundError:
@@ -277,67 +268,80 @@ if __name__ == "__main__":
         question = data['question']
         ground_truth = data['answer']
         
-        round_1_results = []
+        # Track results for each round
+        # Structure: [ [ {solution, score}, ... ], ... ]
+        all_rounds_results = [] 
         
-        # --- Stage 1: Initial Actor Solutions ---
+        # --- Round 0: Initial Solutions & Critiques ---
+        # 1. Generate Solutions
         actor_prompts = [construct_actor_prompt(question) for _ in range(config['agents'])]
         actor_solutions = []
         for i in range(config['agents']):
-            solution_text = call_pipeline(
-                pipeline, actor_prompts[i], actor_gen_config
+            solution_text = call_openai_api(
+                client, actor_prompts[i], actor_gen_config, config['model_id']
             )
             actor_solutions.append(solution_text)
-            time.sleep(0.1) 
-
-        # --- Stage 2: Initial Critic Scores ---
+            # time.sleep(0.1) # Less needed for API but good for rate limits
+        
+        # 2. Generate Critiques
         critic_prompts = [construct_critic_prompt(question, sol) for sol in actor_solutions]
         critic_scores = []
         for i in range(config['agents']):
-            score_text = call_pipeline(
-                pipeline, critic_prompts[i], critic_gen_config
+            score_text = call_openai_api(
+                client, critic_prompts[i], critic_gen_config, config['model_id']
             )
             critic_scores.append(parse_critic_output(score_text))
-            time.sleep(0.1)
 
-        # Collate Round 1 results
+        # 3. Collate Round 0 results
+        current_round_results = []
         for sol, score in zip(actor_solutions, critic_scores):
-            round_1_results.append({"solution": sol, "score": score})
+            current_round_results.append({"solution": sol, "score": score})
+        
+        all_rounds_results.append(current_round_results)
 
-        # --- Stage 3: Actor Debate (v2-Final-Fix) ---
-        debate_prompts = []
-        for i in range(config['agents']):
-            self_analysis = round_1_results[i]
-            other_analyses = round_1_results[:i] + round_1_results[i+1:]
-            debate_prompts.append(construct_debate_prompt(question, self_analysis, other_analyses))
-
-        final_solutions = []
-        for i in range(config['agents']):
-            final_solution_text = call_pipeline(
-                pipeline, debate_prompts[i], actor_gen_config # Use actor config
-            )
-            final_solutions.append(final_solution_text)
-            time.sleep(0.1)
-
-        # --- Stage 4: Final Critic Scores ---
-        final_critic_prompts = [construct_critic_prompt(question, sol) for sol in final_solutions]
-        final_critic_scores = []
-        for i in range(config['agents']):
-            final_score_text = call_pipeline(
-                pipeline, final_critic_prompts[i], critic_gen_config
-            )
-            final_critic_scores.append(parse_critic_output(final_score_text))
-            time.sleep(0.1)
-
-        # Collate Final Round results
-        final_round_results = []
-        for sol, score in zip(final_solutions, final_critic_scores):
-            final_round_results.append({"solution": sol, "score": score})
+        # --- Debate Loop (Rounds 1 to N-1) ---
+        # If rounds=4, we do 3 more rounds (1, 2, 3)
+        for r in range(1, config['rounds']):
+            previous_results = all_rounds_results[-1]
             
+            debate_prompts = []
+            for i in range(config['agents']):
+                self_analysis = previous_results[i]
+                other_analyses = previous_results[:i] + previous_results[i+1:]
+                debate_prompts.append(construct_debate_prompt(question, self_analysis, other_analyses))
+
+            # 1. Generate New Solutions (Debate)
+            new_solutions = []
+            for i in range(config['agents']):
+                new_solution_text = call_openai_api(
+                    client, debate_prompts[i], actor_gen_config, config['model_id']
+                )
+                new_solutions.append(new_solution_text)
+
+            # 2. Generate New Critiques
+            new_critic_prompts = [construct_critic_prompt(question, sol) for sol in new_solutions]
+            new_critic_scores = []
+            for i in range(config['agents']):
+                new_score_text = call_openai_api(
+                    client, new_critic_prompts[i], critic_gen_config, config['model_id']
+                )
+                new_critic_scores.append(parse_critic_output(new_score_text))
+
+            # 3. Collate Current Round results
+            current_round_results = []
+            for sol, score in zip(new_solutions, new_critic_scores):
+                current_round_results.append({"solution": sol, "score": score})
+            
+            all_rounds_results.append(current_round_results)
+
         # --- 5. Save result for this question ---
+        # We save Round 0 as 'round_1_results' (historical naming)
+        # And the LAST round as 'final_round_results'
         results[question] = {
             "ground_truth": ground_truth,
-            "round_1_results": round_1_results,
-            "final_round_results": final_round_results
+            "round_1_results": all_rounds_results[0],
+            "final_round_results": all_rounds_results[-1],
+            "all_rounds_data": all_rounds_results # Save full history just in case
         }
 
     # --- 6. Save final JSON file ---
