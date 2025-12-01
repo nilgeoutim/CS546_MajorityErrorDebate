@@ -1,0 +1,102 @@
+{
+  "Comet Halley orbits the sun every 75 years. Bill's dad saw the Comet when he was 30 years old. Bill saw the comet a second time when he was three times the age his father was when he saw the Comet. How old was Bill when he saw the Comet for the first time?": {
+    "question": "Comet Halley orbits the sun every 75 years. Bill's dad saw the Comet when he was 30 years old. Bill saw the comet a second time when he was three times the age his father was when he saw the Comet. How old was Bill when he saw the Comet for the first time?",
+    "gold_answer": "Bill saw the Comet for the second time when he was 30 years * 3= <<30*3=90>>90 years old.\nComet Halley can be seen every 75 years, so Bill saw the comet for the first time when he was 90 years - 75 years = <<90-75=15>>15 years old.\n#### 15",
+    "final_answer": "90",
+    "raw_final_answers": [
+      "90",
+      "90",
+      "45",
+      "90",
+      "90",
+      "90"
+    ],
+    "stage_summaries": {
+      "1": {
+        "0": "The group of math agents debated the age of Bill when he saw Comet Halley for the first time. They concluded that the age of Bill cannot be determined with the given information, as Bill's dad's age results in a fractional value. Therefore, the final answer is $\\boxed{\\text{Cannot be determined}}$.",
+        "1": "The group correctly determined that Bill's dad was 37 years old when he saw Comet Halley, and Bill saw it for the first time at 111 years old, being three times his dad's age at that time. Therefore, the final answer is $\\boxed{111}$.",
+        "2": "The group debated on Bill's age when he first saw Comet Halley. Agent #4 calculated Bill's age as 120 by adding 30 years to three times his dad's age when he saw the Comet. Agent #5 used variables, determining Bill's age as 315 by substituting his dad's age of 30 into the equation. The group's final answer is $\\boxed{120}$."
+      },
+      "2": {
+        "0": "The group determined that Bill saw Comet Halley for the first time at 90 years old, as he was three times the age his father was when he first saw the Comet at 30 years old. Therefore, the final answer is \\boxed{90}.",
+        "1": "The group debated Bill's age when he first saw Comet Halley. Agent #2 corrected a mistake and found Bill was 45 years old. Agent #3 argued Bill was 90 years old, based on being three times his dad's age. The group's final answer is $\\boxed{45}$.",
+        "2": "The group correctly identified the age difference between Bill and his dad when they saw Comet Halley as 60 years. By setting up and solving the equation $2x = 60$, they found that Bill was $\\boxed{90}$ years old when he saw the Comet for the first time."
+      }
+    }
+  },
+  "Dennis uses 1 pound of butter for every dozen croissants that he makes.  He needs to make 6 dozen croissants.  The grocery store currently has a promotion for buy one pound of butter get one half off.  If the butter costs $4.00 a pound, how much will it cost him to purchase 6 pounds of butter?": {
+    "question": "Dennis uses 1 pound of butter for every dozen croissants that he makes.  He needs to make 6 dozen croissants.  The grocery store currently has a promotion for buy one pound of butter get one half off.  If the butter costs $4.00 a pound, how much will it cost him to purchase 6 pounds of butter?",
+    "gold_answer": "1 pound of butter makes 1 dozen croissants and he needs to make 6 dozen so he needs 1*6 = <<1*6=6>>6 pounds of butter\nThe butter is $4.00 a pound and currently on sale for buy one get one half off so every unit of 2 pounds of butter will cost 4*1.5 = $<<4*1.5=6.00>>6.00\nHe needs 6 pounds of butter and the current promotion is for a unit of 2 pounds of butter so he needs to buy 6/2 = <<6/2=3>>3 units worth of butter\nThe sale price is $6.00 per 2 pounds of butter and he needs to buy 3 units of butter so 6*3 = $<<6*3=18.00>>18.00 worth of butter\n#### 18",
+    "final_answer": "20",
+    "raw_final_answers": [
+      "20",
+      "20",
+      "20",
+      "14",
+      "20.00",
+      "18"
+    ],
+    "stage_summaries": {
+      "1": {
+        "0": "The group calculated that Dennis needs 6 pounds of butter to make 6 dozen croissants. With a promotion of buy one pound, get one half off, he will pay full price for 4 pounds and half price for 2 pounds. The total cost for 6 pounds of butter is $20.00. Therefore, the group's final answer is $\\boxed{20}$.",
+        "1": "The group debated the cost of purchasing 6 pounds of butter for making 6 dozen croissants. Agent #2 calculated the cost as $12.00, considering the buy one pound get one half off promotion. Agent #3, however, arrived at a total cost of $14.00, factoring in the promotion for the first pound and $2.00 per pound for the next 5 pounds. The group's final answer for the cost of 6 pounds of butter is $\\boxed{14.00}$.",
+        "2": "The group discussed that in the buy one pound, get one half off promotion, Dennis effectively pays for 1.5 pounds for every pound bought. To purchase 6 pounds of butter, he needs to pay for 6 pounds * 1.5 = 9 pounds of butter. At $4.00 per pound, the total cost for 9 pounds of butter is $36.00. Therefore, the correct cost for Dennis to purchase 6 pounds of butter is $\\boxed{36}$."
+      },
+      "2": {
+        "0": "The group calculated that Dennis needs 6 pounds of butter for 6 dozen croissants. With a promotion of buy one pound, get one half off at $4.00 per pound, he will pay full price for 4 pounds and half price for 2 pounds. The total cost for 6 pounds of butter is $20.00. Therefore, the group's final answer is $\\boxed{20}$.",
+        "1": "The group discussed how Dennis needs 6 pounds of butter for 6 dozen croissants, with a buy one pound get one half off promotion. Agent #2 calculated the total cost as $20, considering 4.5 pounds at full price and 1.5 pounds at half price. Agent #3 calculated the cost as $14, considering 4 pounds at full price and 2 pounds with the promotion. The group's final answer is $\\boxed{14}$.",
+        "2": "The group debated the cost of purchasing 6 pounds of butter for making 6 dozen croissants. They considered the buy one pound, get one half off promotion. Agent #4 calculated the total cost as $20.00, while Agent #5 calculated it as $18.00. The final answer chosen by the group is $\\boxed{20.00} based on Agent #4's reasoning."
+      }
+    }
+  },
+  "Alex is getting ready to attend an event that she has hosted and wants to make sure that she has enough seats for everyone. She invites 100 people via email and each invited person says that they will also invite 2 of their friends. She then calls 10 of her friends to invite them too and 8 of them say they will be bringing their spouses. How many seats will Alex need?": {
+    "question": "Alex is getting ready to attend an event that she has hosted and wants to make sure that she has enough seats for everyone. She invites 100 people via email and each invited person says that they will also invite 2 of their friends. She then calls 10 of her friends to invite them too and 8 of them say they will be bringing their spouses. How many seats will Alex need?",
+    "gold_answer": "Each of the people that were emailed are bringing 2 friends, which means that they will be in groups of 1 +2 = <<1+2=3>>3 people.\nSince 100 people were emailed, this creates a total of 3 * 100 = <<3*100=300>>300 people.\nOut of her friends, 8 people said that they will be bringing their spouse, so this is a total of 10 + 8 = <<10+8=18>>18 people.\nIncluding her own seat, Alex is going to need a total of 300 + 18 +1 = <<300+18+1=319>>319 seats.\n#### 319",
+    "final_answer": "318",
+    "raw_final_answers": [
+      "318",
+      "318",
+      "318",
+      "318",
+      "328",
+      "320"
+    ],
+    "stage_summaries": {
+      "1": {
+        "0": "The group calculated the total number of attendees for Alex's event by considering initial invitees, friends of invitees, Alex's friends, and spouses of Alex's friends. Agent #0 concluded Alex will need \\boxed{326} seats, while Agent #1 calculated she will need \\boxed{330} seats.",
+        "1": "The group correctly reasoned that the total number of attendees includes the initial invitees, invitees' friends, and friends' spouses, totaling 320 attendees. Alex's friends were not included in the count. Therefore, the final answer is \\boxed{320}.",
+        "2": "The group calculated the total number of attendees for Alex's event by considering the initial invitees, friends of invitees, Alex's friends, and their spouses. They all agreed that Alex will need \\boxed{330} seats for her event."
+      },
+      "2": {
+        "0": "The group calculated the total number of attendees by considering initial invitees, friends of invitees, and Alex's friends, arriving at a total of 318 people. Therefore, Alex will need \\boxed{318} seats.",
+        "1": "The math agents calculated the total attendees for Alex's event by considering the initial invitees, friends of invitees, and Alex's friends with spouses. They all agreed that Alex will need \\boxed{318} seats for her event.",
+        "2": "The group debated whether to count friends and their spouses as separate or combined units. Agent #4 corrected the double-counting error, counting friends and spouses as one unit, resulting in a total of 328 seats needed. Agent #5 emphasized that spouses are additional attendees, combining friends and spouses, leading to a total of 320 seats required. The group's final answer is \\boxed{320}."
+      }
+    }
+  },
+  "Abraham owns 80 square meters of unused land. He sold half of the land for $50, and after a month, he sold another 1/4 of his land for $30. He then sold the remaining land for $3 per square meter. How much money will he be able to earn after selling all his unused land?": {
+    "question": "Abraham owns 80 square meters of unused land. He sold half of the land for $50, and after a month, he sold another 1/4 of his land for $30. He then sold the remaining land for $3 per square meter. How much money will he be able to earn after selling all his unused land?",
+    "gold_answer": "Abraham sold 1/2 x 80= <<1/2*80=40>>40 square meters of his unused land.\nAfter a month, he sold 1/4 x 40 = <<1/4*40=10>>10 square meters of his land.\nSo, the total land he already sold is 40+10= <<50=50>>50 square meters of his land.\nHe has 80 - 50 = <<80-50=30>>30 remaining land to be sold at $3 per square meter.\nSo he earned $3 x 30 = $<<3*30=90>>90 for that land.\nTherefore, he earned a total of $50 + $30 + $90 = $<<50+30+90=170>>170.\n#### 170",
+    "final_answer": "140",
+    "raw_final_answers": [
+      "140",
+      "140",
+      "140",
+      "140",
+      "140",
+      "140"
+    ],
+    "stage_summaries": {
+      "1": {
+        "0": "The group correctly calculated the earnings from each portion of land sold: $50 + $30 + $3*(80/8) = $140. Therefore, the group's final answer is \\boxed{140}.",
+        "1": "The group correctly calculated that Abraham will earn $140 after selling all his unused land. The key reasoning involved dividing the land into halves and quarters, then selling the remaining land at a specific price per square meter. Therefore, the final answer is $\\boxed{140}$.",
+        "2": "The group correctly calculated that Abraham will earn $140 after selling all his unused land by selling half for $50, 1/4 for $30, and the remaining for $3 per square meter. Their final answer is \\boxed{140}."
+      },
+      "2": {
+        "0": "The group correctly calculated Abraham's earnings from selling his land step by step. They found that he will earn $140 after selling all his unused land. Therefore, the final answer is $\\boxed{140}$.",
+        "1": "The group calculated Abraham's earnings from selling his unused land step by step. They correctly determined that he earned $50 from selling half of the land, $30 from selling 1/4 of the land, and $60 from selling the remaining portion. Adding these amounts, Abraham will earn a total of $\\boxed{140}$.",
+        "2": "The group calculated that Abraham earned $80 by selling half of his land for $50 and another 1/4 for $30. He then earned an additional $60 by selling the remaining 1/4 of his land for $3 per square meter. Therefore, the total amount of money Abraham will earn after selling all his unused land is \\boxed{140}."
+      }
+    }
+  }
+}
