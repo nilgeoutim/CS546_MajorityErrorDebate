@@ -26,7 +26,8 @@ def construct_actor_prompt(question: str, persona: str) -> list:
             "Translate the logic directly into Python code. "
             "MUST define all variables explicitly. "
             "Strictly NO magic numbers. "
-            "Output ONLY the Python code block."
+            "Output ONLY the Python code block. "
+            "IMPORTANT: You MUST print() the final result."
         )
         user_content = f"Problem: {question}\n\nWrite a Python script to solve this. Wrap in ```python ... ```."
         
@@ -95,7 +96,7 @@ For EACH candidate, provide a JSON evaluation using this 'Trap_Aware_Confidence_
   "dimensions": {{
     "Variable_Completeness": {{ "score": 0-10, "reason": "Are all entities explicitly defined?" }},
     "Constraint_Satisfaction": {{ "score": 0-10, "reason": "Does it satisfy negative constraints?" }},
-    "Code_Logic_Consistency": {{ "score": 0-10, "reason": "Does logic match narrative?" }},
+    "Code_Logic_Consistency": {{ "score": 0-10, "reason": "If the solution uses Python code, give it a HIGH score (8-10) unless the code clearly crashes. Code is more reliable than text." }},
     "Trap_Detection": {{ "score": 0-10, "reason": "Did it catch common traps (Unit Conversion, Boundary Omission, Negative Propositions)?" }}
   }},
   "final_score": (Sum of weighted scores: Var*0.3 + Const*0.3 + Code*0.2 + Trap*0.2),
@@ -109,10 +110,19 @@ Output a list of JSON objects, one for each candidate, wrapped in ```json ... ``
         {"role": "user", "content": user_prompt}
     ]
 
-def construct_correction_prompt(question: str, original_solution: str, blind_feedback: str) -> list:
+def construct_correction_prompt(question: str, original_solution: str, blind_feedback: str, is_executor: bool) -> list:
     """
     Round 3: Agent corrects their own solution based on blind feedback.
     """
+    
+    special_instruction = ""
+    if is_executor:
+        special_instruction = (
+            "IMPORTANT: You are the Code Executor. TRUST YOUR CODE. "
+            "If your code execution was successful and logical, DO NOT let the text-based critics sway you. "
+            "Only change your answer if you found a bug in your own code."
+        )
+
     return [
         {"role": "system", "content": "You are a rational problem solver. Update your solution if the feedback is convincing."},
         {"role": "user", "content": f"""
@@ -124,12 +134,41 @@ Your Previous Solution:
 Blind Peer Reviews:
 {blind_feedback}
 
+{special_instruction}
+
 Task:
 1. Analyze the feedback.
 2. If you were wrong, admit it and provide the CORRECTED solution.
 3. If you were right, defend your logic.
 4. Final answer in \\boxed{{}}.
 """}
+    ]
+
+def construct_verification_prompt(question: str, candidate_answer: str) -> list:
+    """
+    Round 4: The Final Exam.
+    Agent 0 (Executor) verifies the 'Temporary Winner' with fresh code.
+    """
+    system_content = (
+        "You are a Quality Assurance Engineer. Your job is to VERIFY a candidate answer using Python. "
+        "You must write a script that checks if the answer satisfies all problem constraints. "
+        "Be extremely rigorous."
+    )
+    
+    user_content = f"""
+Problem: {question}
+
+Candidate Answer to Verify: {candidate_answer}
+
+Task:
+1. Write a Python script to verify this answer.
+2. If the answer is correct according to your code, print "VERIFIED".
+3. If the answer is incorrect, print "REJECTED" and calculate the NEW correct answer.
+4. Output the final valid answer in \\boxed{{}}.
+"""
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content}
     ]
 
 # =====================================================================================
@@ -142,6 +181,11 @@ def execute_python_code(code_str: str) -> str:
     if not match:
         return "Error: No Python code block found."
     code = match.group(1)
+    
+    # FIX: Remove import statements to prevent exec() crash
+    # (Since we restrict __import__, but provide math/numpy/random in globals)
+    code = re.sub(r'^import\s+.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^from\s+.*import\s+.*$', '', code, flags=re.MULTILINE)
     
     import io
     import sys
@@ -270,7 +314,9 @@ if __name__ == "__main__":
             # If executor, run code
             if role == "executor":
                 exec_out = execute_python_code(resp)
-                resp += f"\n\n{exec_out}"
+                # Robustness: Extract last line as the answer
+                last_line = exec_out.strip().split('\n')[-1] if exec_out.strip() else "Error"
+                resp += f"\n\n{exec_out}\n\nFinal Answer: \\boxed{{{last_line}}}"
             
             r1_solutions.append({"role": role, "solution": resp, "id": i})
 
@@ -331,23 +377,27 @@ if __name__ == "__main__":
                     if r.get("candidate") == my_label:
                         my_feedback += f"- Judge: {r.get('critique')} (Score: {r.get('final_score')})\n"
 
-            corr_prompt = construct_correction_prompt(question, r1_solutions[i]['solution'], my_feedback)
+            # FIX: Pass is_executor explicitly
+            corr_prompt = construct_correction_prompt(question, r1_solutions[i]['solution'], my_feedback, is_executor=(i==0))
             final_resp = call_openai_api(client, corr_prompt, config['model_id'])
             
             # FIX: Execute code if present (Critical for Executor in Round 3)
             if "```python" in final_resp:
                  exec_out = execute_python_code(final_resp)
-                 final_resp += f"\n\n{exec_out}"
+                 # Robustness: Extract last line as the answer
+                 last_line = exec_out.strip().split('\n')[-1] if exec_out.strip() else "Error"
+                 final_resp += f"\n\n{exec_out}\n\nFinal Answer: \\boxed{{{last_line}}}"
             
             # Extract answer
             ans = extract_boxed_answer(final_resp)
             final_answers.append({"answer": ans, "full_text": final_resp, "original_idx": i})
 
-        # --- Weighted Voting Algorithm (Conservative Strategy) ---
-        # Consensus > Outlier. Alpha=1.0, Threshold=4.0
+        # --- Weighted Voting Algorithm (Executor Super-Weight) ---
+        # Alpha increased to 2.5 to reward high confidence.
+        # Executor (Index 0) gets a 2.5x multiplier on its weight.
         
         unique_answers = {} 
-        alpha = 1.0 
+        alpha = 2.5 
         max_score = 10.0
         score_threshold = 4.0
         
@@ -372,29 +422,69 @@ if __name__ == "__main__":
             # Weight calculation
             weight = math.exp(alpha * norm_score)
             
+            # SUPER WEIGHT for Executor (Index 0)
+            if i == 0:
+                weight *= 2.5
+            
             if ans not in unique_answers:
                 unique_answers[ans] = 0
             unique_answers[ans] += weight
 
-        # Select Winner
+        # Select Winner (Temporary)
+        temp_best_ans = "Error"
         fallback_triggered = False
+        
         if unique_answers:
-            best_ans = max(unique_answers, key=unique_answers.get)
+            temp_best_ans = max(unique_answers, key=unique_answers.get)
         else:
-            # Fallback: All failed threshold, pick "least bad" (highest raw score)
+            # Fallback
             fallback_triggered = True
             if raw_scores_map:
-                best_ans = max(raw_scores_map, key=raw_scores_map.get)
-            else:
-                best_ans = "Error"
+                temp_best_ans = max(raw_scores_map, key=raw_scores_map.get)
         
+        # --- Round 4: Verification & Recanting (The Final Exam) ---
+        # Agent 0 (Executor) verifies the temporary winner
+        
+        final_decision = temp_best_ans
+        recanted = False
+        r4_output = ""
+        
+        if temp_best_ans != "Error":
+            verify_prompt = construct_verification_prompt(question, temp_best_ans)
+            r4_resp = call_openai_api(client, verify_prompt, config['model_id'])
+            
+            # Execute verification code
+            if "```python" in r4_resp:
+                 exec_out = execute_python_code(r4_resp)
+                 r4_resp += f"\n\n{exec_out}"
+            
+            r4_output = r4_resp
+            
+            # Logic: Did it verify or reject?
+            if "REJECTED" in r4_resp or "REJECTED" in exec_out:
+                # Recant!
+                recanted = True
+                # Try to find new answer in R4 output
+                new_ans = extract_boxed_answer(r4_resp)
+                if new_ans != "Error":
+                    final_decision = new_ans
+            elif "VERIFIED" in r4_resp or "VERIFIED" in exec_out:
+                # Confirmed
+                pass
+            else:
+                # Ambiguous - Stick to weighted vote but flag it
+                pass
+
         results[question] = {
             "ground_truth": ground_truth,
-            "final_decision": best_ans,
+            "final_decision": final_decision,
+            "temp_decision": temp_best_ans,
             "fallback_triggered": fallback_triggered,
+            "recanted": recanted,
             "round_1": r1_solutions,
             "round_2_scores": scores_map,
             "round_3_finals": final_answers,
+            "round_4_verification": r4_output,
             "voting_weights": unique_answers
         }
 
