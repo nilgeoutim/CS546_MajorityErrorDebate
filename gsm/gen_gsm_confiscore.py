@@ -1,14 +1,15 @@
 """
-This script is used to generate the GSM dataset with the Confidence Score built on basis of the majority error.
-
-
+This script is used to generate the GSM dataset with the Confidence Score
+built on basis of the majority error, using a multi-agent debate with a critic.
 """
+
 import openai
 import json
 import numpy as np
 import random
 import re
-
+import time
+from tqdm import tqdm
 
 # ======= Helper: extract number =======
 def extract_number(text):
@@ -16,23 +17,29 @@ def extract_number(text):
     m = re.findall(r"[-+]?\d*\.?\d+", text)
     return m[-1] if m else None
 
+
 # ========== Helper: extract explanation ==========
 def parse_critic_explanation(text):
     """
     从 critic 输出中解析 Explanation 段，解析不到就返回原文本。
+    约定 critic 输出格式大致为:
+      Confidence Score: X
+      Explanation: ...
     """
     m = re.search(r"Explanation\s*:\s*(.*)", text, re.DOTALL)
     if not m:
         return text.strip()
     return m.group(1).strip()
 
-# ========== Helper: extract confidencescore ==========
+
+# ========== Helper: extract confidence score ==========
 def parse_critic_score(text):
     m = re.search(r"Confidence\s*Score\s*:\s*([0-9]+)", text)
     if not m:
         return None
     score = int(m.group(1))
     return max(1, min(10, score))
+
 
 # ======= Critic Prompt =======
 def construct_critic_message(question, agent_answer):
@@ -47,74 +54,74 @@ def construct_critic_message(question, agent_answer):
     )
     return [{"role": "user", "content": prompt}]
 
-# ========== Debate Prompt (LLM 部分的规则) ==========
-def construct_debate_prompt(question, your_ans, your_score, others):
+
+# ========== Unified Debate Prompt（正常情况：使用上一轮的 answer + score + reasoning） ==========
+def construct_unified_debate_prompt(question, your_ans, your_score, your_solution, others):
     """
-    构造 score-aware debate prompt（程序已处理 high-consensus 和 low-score）。
-    这里只负责 normal case：score 高者 defend，score 低者 learn。
+    统一的 debate prompt，合并了原来的 construct_message 和 construct_debate_prompt 逻辑。
+
+    参数：
+      question: 原题目
+      your_ans: 当前 agent 上一轮的数值答案
+      your_score: 当前 agent 上一轮的 critic score
+      your_solution: 当前 agent 上一轮的完整 reasoning+answer 文本
+      others: list[{"ans": ..., "score": ..., "solution": ...}] 其他 agent 的信息
     """
 
     others_text = ""
     for j, obj in enumerate(others):
-        others_text += f"Agent {j}: answer {obj['ans']}, score {obj['score']}\n"
+        others_text += (
+            f"One agent's answer:  ```{obj['solution']}```, its score is {obj['score']}/10\n"
+        )
 
     prompt = f"""
 You are participating in a multi-agent debate assisted by a critic.
 
-Here are the previous round's answers and confidence scores:
+Your previous reasoning and answer were:
+```{your_solution}```, your score is {your_score}/10
 
-Your answer: {your_ans}, score: {your_score}
+Here are the previous round's answers and confidence scores from other agents:
+
 {others_text}
-
 Based on these scores:
 
-- If your score is significantly higher than others (e.g., >2 points higher), KEEP and DEFEND your reasoning.
-- If your score is significantly lower, STUDY the highest-scoring agent’s answer and adjust accordingly.
+- If your score is significantly higher than others, KEEP and DEFEND your reasoning and answer.
+- If your score is significantly lower, STUDY the highest-scoring agent’s answer and adjust your reasoning accordingly.
 
-Now provide your updated reasoning, ending with \\boxed{{answer}}.
+Considering the above information, please provide your reasoning and answer to the original problem:
+{question}
+
+Your final answer must end with \\boxed{{answer}}.
 """
     return {"role": "user", "content": prompt}
 
 
 # ========== Restart Prompt（所有 agent 分数都低） ==========
-def construct_restart_prompt(question, critic_explanation):
+def construct_restart_prompt(question, critic_explanation, prev_solution, prev_answer, prev_score):
+    """
+    当所有 agent 的 score 都很低时，对单个 agent 使用的 restart prompt。
+    这里显式提供：
+      - 上一轮该 agent 的 reasoning（prev_solution）
+      - 上一轮提取的 numeric answer（prev_answer）
+      - 上一轮 critic 的 score（prev_score）
+      - critic 的 explanation（critic_explanation）
+    """
+    prev_ans_str = prev_answer if prev_answer is not None else "N/A"
+
     return {
         "role": "user",
         "content": (
-            "The critic believes your previous reasoning was not correct.\n"
+            "The critic believes your previous reasoning was not correct.\n\n"
+            "Your previous reasoning and answer were:\n"
+            f"```{prev_solution}```\n"
+            f"Your extracted answer was: {prev_ans_str}, and the critic gave it a confidence score of {prev_score}/10.\n\n"
             f"Reason given by the critic: {critic_explanation}\n\n"
             "Please restart your reasoning from scratch and independently solve the problem:\n"
             f"{question}\n\n"
+            "Do not simply repeat your previous solution; carefully re-derive the answer step by step.\n"
             "End with \\boxed{{answer}}."
         ),
     }
-
-
-# ========== construct_message for multi-agent answers ==========
-def construct_message(agents, question, idx):
-    """
-    仍使用你的原结构：从 other agents 中取 idx（上一轮 assistant）。
-    idx 已经更新为 3*round - 2，保证指向 assistant。
-    """
-    if len(agents) == 0:
-        return {
-            "role": "user",
-            "content": (
-                "Can you double check your answer? Reiterate with \\boxed{{answer}}."
-            ),
-        }
-
-    prefix_string = "These are the solutions from other agents:"
-
-    for agent in agents:
-        agent_response = agent[idx]["content"]
-        prefix_string += f"\n\nOne agent solution: ```{agent_response}```"
-
-    prefix_string += (
-        f"\n\nUsing these solutions as additional info, answer the original problem:\n"
-        f"{question}\nYour final answer must end with \\boxed{{answer}}."
-    )
-    return {"role": "user", "content": prefix_string}
 
 
 # ========== Assistant Message ==========
@@ -130,59 +137,62 @@ def read_jsonl(path: str):
 
 
 # ===============================================================
-#                       MAIN: Debate v2.5
+#                       MAIN
 # ===============================================================
 
 if __name__ == "__main__":
     agents = 3
-    rounds = 3
+    rounds = 4
+    sample_count = 100
     random.seed(0)
 
-    HIGH_THRESHOLD = 8   # high confidence for early stop
-    LOW_THRESHOLD = 4    # low confidence triggers restart
+    HIGH_THRESHOLD = 7   # high confidence for early stop
+    LOW_THRESHOLD = 7    # low confidence triggers restart
 
     generated_description = {}
 
-    questions = read_jsonl("gsm_hard.jsonl")
+    questions = read_jsonl("gsm_majority_error.jsonl")
     # random.shuffle(questions)
 
     client = openai.OpenAI()
 
-    for data in questions:    # demo run 10 questions
+    # 记录开始时间
+    start_time = time.time()
+
+    for data in tqdm(questions[:sample_count], desc="Processing samples", total=sample_count):
         question = data["question"]
         answer = data["answer"]
 
-        # 初始化每个 agent context
-        agent_contexts = [[
-            {
-                "role": "user",
-                "content": (
-                    f"Can you solve this math problem? {question}\n"
-                    "Explain your reasoning and end with \\boxed{{answer}}."
-                ),
-            }
-        ] for _ in range(agents)]
+        # 初始化每个 agent context（第一次 debate 的起点）
+        def init_agent_contexts():
+            return [[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Can you solve this math problem? {question}\n"
+                        "Explain your reasoning and end with \\boxed{{answer}}."
+                    ),
+                }
+            ] for _ in range(agents)]
 
-        for round in range(rounds):
-            print(f"\n========== ROUND {round} ==========")
+        agent_contexts = init_agent_contexts()
+        round_idx = 0
+
+        while round_idx < rounds:
+            # print(f"\n========== ROUND {round_idx + 1} ==========")
 
             # --- 每轮存储结果 ---
             answers_this_round = []
             scores_this_round = []
             critic_explanations_this_round = []
+            solutions_this_round = []  # 保存每个 agent 本轮的完整 reasoning+answer 文本
 
             # --- agent inference ---
             for i, agent_context in enumerate(agent_contexts):
 
-                # 不是第一轮才参考其他 agent
-                if round != 0:
-                    idx = 3 * round - 2
-                    agent_contexts_other = agent_contexts[:i] + agent_contexts[i+1:]
-                    message = construct_message(agent_contexts_other, question, idx)
-                    agent_context.append(message)
+                # === Agent generation ===（stateless：只给最后一条 user prompt）
+                # print("agent_num, prompt: ", i, last_user_msg["content"])
 
-                # === Agent generation ===
-                print("agent_num, agent_context: ", i, agent_context)
                 completion = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=agent_context,
@@ -190,6 +200,9 @@ if __name__ == "__main__":
                 )
                 assistant_msg = construct_assistant_message(completion)
                 agent_context.append(assistant_msg)
+
+                # 保存完整 reasoning 文本
+                solutions_this_round.append(assistant_msg["content"])
 
                 # Extract numeric answer
                 ans_number = extract_number(assistant_msg["content"])
@@ -199,6 +212,7 @@ if __name__ == "__main__":
                 critic_messages = construct_critic_message(
                     question, assistant_msg["content"]
                 )
+                # print("critic_messages: ", critic_messages)
                 critic_completion = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=critic_messages,
@@ -206,69 +220,100 @@ if __name__ == "__main__":
                 )
                 critic_content = critic_completion.choices[0].message.content
                 score = parse_critic_score(critic_content)
-                score = score if score is not None else 1
+                score = score if score is not None else 5
                 scores_this_round.append(score)
-                
+
                 critic_expl = parse_critic_explanation(critic_content)
+                # print("critic_expl: ", critic_expl)
                 critic_explanations_this_round.append(critic_expl)
 
-                # Append critic feedback (not used directly in v2.5 decisions)
-                agent_context.append(
-                    {"role": "user", "content": f"Critic score: {score}/10."}
-                )
-
             # ----- Debug 输出 -----
-            print(f"GT: {extract_number(answer)}")
-            for i in range(agents):
-                print(f"Agent {i}: answer={answers_this_round[i]}, score={scores_this_round[i]}")
-            print("-----------------------------------")
+            # print(f"GT: {extract_number(answer)}")
+            # for i in range(agents):
+            #     print(f"Agent {i}: answer={answers_this_round[i]}, score={scores_this_round[i]}")
+            # print("-----------------------------------")
 
-            # ===================================================
-            #           Early Stopping Conditions
-            # ===================================================
-
-            # ==== Condition A: High-consensus early stop ====
+            #           Early Stopping Conditions:
+            #           Condition A: High-consensus early stop
             if len(set(answers_this_round)) == 1 and all(
                 s >= HIGH_THRESHOLD for s in scores_this_round
             ):
-                print(">>> EARLY STOP: High-confidence consensus reached.")
+                # print(">>> EARLY STOP: High-confidence consensus reached.")
                 break
 
             # ==== Condition B: All agents low-confidence ====
             if all(s < LOW_THRESHOLD for s in scores_this_round):
-                print(">>> RESTART: All agents low confidence. Force full rethinking next round.")
+                # print(">>> RESTART: All agents low confidence. Restart 3-round debate from scratch.")
 
-                # 下一轮强制 restart prompt
-                for agent_context in agent_contexts:
-                    agent_context.append(construct_restart_prompt(question))
+                # 1) 对每个 agent 构造带 explanation + 上一轮 reasoning/answer 的 restart prompt
+                new_agent_contexts = []
+                for i in range(agents):
+                    expl = critic_explanations_this_round[i]
+                    prev_sol = solutions_this_round[i]
+                    prev_ans = answers_this_round[i]
+                    prev_score = scores_this_round[i]
+                    new_agent_contexts.append([
+                        construct_restart_prompt(
+                            question,
+                            expl,
+                            prev_sol,
+                            prev_ans,
+                            prev_score,
+                        )
+                    ])
 
-                continue
+                agent_contexts = new_agent_contexts
+                # 2) 重置轮数，从 0 再来 3 轮
+                round_idx = 0
+                continue  # 进入下一轮（新的一轮）
 
             # ===================================================
-            #      Normal Case: Construct Score-Aware Debate Prompt
+            #      Normal Case: Construct Unified Score-Aware Debate Prompt
             # ===================================================
 
             for i, agent_context in enumerate(agent_contexts):
                 your_ans = answers_this_round[i]
                 your_score = scores_this_round[i]
+                your_solution = solutions_this_round[i]
 
-                # others
+                # 其他 agents 的 answer + score + reasoning
                 others = []
                 for j in range(agents):
-                    if j != i:
-                        others.append({
-                            "ans": answers_this_round[j],
-                            "score": scores_this_round[j]
-                        })
+                    if j == i:
+                        continue
+                    others.append({
+                        "ans": answers_this_round[j],
+                        "score": scores_this_round[j],
+                        "solution": solutions_this_round[j],
+                    })
 
-                debate_prompt = construct_debate_prompt(
-                    question, your_ans, your_score, others
+                unified_prompt = construct_unified_debate_prompt(
+                    question, your_ans, your_score, your_solution, others
                 )
-                agent_context.append(debate_prompt)
+                # unified_prompt 作为下一轮的 last_user_msg
+                agent_context.append(unified_prompt)
+
+            round_idx += 1
 
         # save logs
         generated_description[question] = (agent_contexts, answer)
 
-    json.dump(generated_description, open("gsm_v2.5.json", "w"))
+    # 记录结束时间并计算总时间和平均时间
+    end_time = time.time()
+    total_time = end_time - start_time
+    per_sample_time = total_time / sample_count if sample_count > 0 else 0
 
-    print("\nSaved gsm_v2.5.json\n")
+    name = f"gsm_v3_{agents}_{rounds}_top_{sample_count}_majority_error.json"
+    
+    json.dump(
+        generated_description,
+        open(name, "w"),
+    )
+
+    print(f"\nSaved {name}\n")
+    print("=" * 50)
+    print("Time Statistics:")
+    print(f"Total samples processed: {sample_count}")
+    print(f"Total time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+    print(f"Per sample time: {per_sample_time:.2f} seconds")
+    print("=" * 50)

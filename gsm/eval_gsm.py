@@ -120,7 +120,7 @@ def most_frequent(List):
     return num
 
 if __name__ == "__main__":
-    response_dict = json.load(open("gsm_1_1_all.json", "r"))
+    response_dict = json.load(open("gsm_v4_stateful_5_4_top_50_majority_error.json", "r"))
 
     questions = list(response_dict.keys())
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
         pred_solutions = []
         for response in responses:
-            pred_solution = response[-1]['content']
+            pred_solution = response[-1]['content'] 
 
             pred_solutions.append(pred_solution)
 

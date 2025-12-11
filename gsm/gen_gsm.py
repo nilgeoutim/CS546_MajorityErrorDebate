@@ -31,7 +31,7 @@ def read_jsonl(path: str):
 
 if __name__ == "__main__":
     agents = 3
-    rounds = 3
+    rounds = 1
     random.seed(0)
 
     generated_description = {}
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     questions = read_jsonl("gsm_test.jsonl")
     random.shuffle(questions)
 
-    for data in questions: # previously: [:100]
+    for data in questions[:100]: # previously: [:100]
         question = data['question']
         answer = data['answer']
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
                 client = openai.OpenAI()
                 completion = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-3.5-turbo-0125",
                         messages=agent_context,
                         n=1)
         
@@ -69,4 +69,4 @@ if __name__ == "__main__":
 
         generated_description[question] = (agent_contexts, answer)
 
-    json.dump(generated_description, open("gsm_{}_{}_all.json".format(agents, rounds), "w"))
+    json.dump(generated_description, open("gsm_{}_{}_top100.json".format(agents, rounds), "w"))
