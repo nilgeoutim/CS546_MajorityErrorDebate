@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 # ======= Helper: extract number =======
 def extract_number(text):
-    """从文本中提取最后一个数字（包含整数/小数）。"""
+    """from text to extract the last number (include integer/decimal)."""
     m = re.findall(r"[-+]?\d*\.?\d+", text)
     return m[-1] if m else None
 
@@ -28,8 +28,8 @@ def extract_number(text):
 # ========== Helper: extract explanation ==========
 def parse_critic_explanation(text):
     """
-    旧的单-agent critic 解析函数，v4 中不再直接使用，
-    但可以保留以备后续 fallback 使用。
+    old single-agent critic parsing function, not used directly in v4,
+    but can be kept for future fallback usage.
     """
     m = re.search(r"Explanation\s*:\s*(.*)", text, re.DOTALL)
     if not m:
@@ -40,7 +40,7 @@ def parse_critic_explanation(text):
 # ========== Helper: extract confidence score ==========
 def parse_critic_score(text):
     """
-    旧的单-agent critic 解析函数，v4 中不再直接使用。
+    old single-agent critic parsing function, not used directly in v4.
     """
     m = re.search(r"Confidence\s*Score\s*:\s*([0-9]+)", text)
     if not m:
@@ -50,69 +50,6 @@ def parse_critic_score(text):
 
 
 # ======= Multi-agent Critic Prompt =======
-# def construct_multi_critic_message(question, agent_solutions, agent_answers):
-#     """
-#     构造一次性给 critic 的 prompt，让 critic 同时看到所有 agents 的
-#     reasoning + answer，并输出每个 agent 的 score 和 explanation。
-
-#     agent_solutions: list[str]，每个 agent 本轮的完整 reasoning+answer 文本
-#     agent_answers:   list[str or None]，每个 agent 提取出的 numeric answer（可能为 None）
-#     """
-#     agent_blocks = []
-#     for idx, (sol, ans) in enumerate(zip(agent_solutions, agent_answers)):
-#         ans_str = ans if ans is not None else "N/A"
-#         block = (
-#             f"Agent {idx}:\n"
-#             f"- Extracted answer: {ans_str}\n"
-#             f"- Reasoning and answer:\n```{sol}```\n"
-#         )
-#         agent_blocks.append(block)
-
-#     agents_text = "\n\n".join(agent_blocks)
-
-#     prompt = f"""
-# You are a math critic. Your job is to EVALUATE and COMPARE the reasoning and final answers
-# of multiple agents on the SAME math problem.
-
-# Problem:
-# {question}
-
-# Below are the agents' solutions:
-
-# {agents_text}
-
-# You must assign a confidence score (1-10) and a brief explanation for EACH agent.
-
-# IMPORTANT RULES:
-# 1. A higher score means the agent's reasoning is more sound and the final answer is more likely to be correct.
-# 2. If two or more agents give DIFFERENT numerical answers, at most ONE of them can receive a HIGH score (>= 8).
-#    - For agents with clearly incorrect reasoning or answer, give a low score (e.g., 1-4).
-#    - If all answers seem wrong, you may give all of them low scores.
-# 3. If multiple agents give the SAME answer with similar, reasonable reasoning, you may give them similar scores.
-
-# RESPONSE FORMAT (STRICT JSON):
-# Respond ONLY with a single JSON object of the form:
-
-# {{
-#   "agents": [
-#     {{
-#       "id": 0,
-#       "score": <integer 1-10>,
-#       "explanation": "<brief explanation for agent 0>"
-#     }},
-#     {{
-#       "id": 1,
-#       "score": <integer 1-10>,
-#       "explanation": "<brief explanation for agent 1>"
-#     }},
-#     ...
-#   ]
-# }}
-
-# Do NOT add any extra text outside the JSON.
-# """
-#     return [{"role": "user", "content": prompt}]
-
 def construct_multi_critic_message(question, agent_solutions, agent_answers):
     agent_blocks = []
     for idx, (sol, ans) in enumerate(zip(agent_solutions, agent_answers)):
@@ -156,9 +93,9 @@ JSON only:
 
 def parse_multi_critic_output(text, num_agents):
     """
-    解析 multi-agent critic 的 JSON 输出。
+    parse the JSON output of multi-agent critic.
 
-    期望格式:
+    expected format:
     {
       "agents": [
         {"id": 0, "score": 7, "explanation": "..."},
@@ -167,15 +104,15 @@ def parse_multi_critic_output(text, num_agents):
       ]
     }
 
-    如果解析失败，则 fallback:
-      - 所有 score = 5
-      - 所有 explanation = 原始 text
+    if parsing fails, fallback:
+      - all scores = 5
+      - all explanations = original text
     """
     scores = [5] * num_agents
     explanations = [text.strip()] * num_agents
 
     try:
-        # 找到第一个 '{' 和最后一个 '}'，尽量截出 JSON 主体
+        # find the first '{' and the last '}', try to extract the JSON body
         first = text.find("{")
         last = text.rfind("}")
         if first != -1 and last != -1 and last > first:
@@ -198,45 +135,13 @@ def parse_multi_critic_output(text, num_agents):
                 except Exception:
                     continue
     except Exception:
-        # 解析失败就维持默认值
+        # if parsing fails, maintain the default values
         pass
 
     return scores, explanations
 
 
-# ========== Unified Debate Prompt（正常情况：使用上一轮的 answer + score + reasoning） ==========
-# def construct_unified_debate_prompt(question, your_ans, your_score, your_solution, others):
-#     """
-#     统一的 debate prompt，使用上一轮的 answer + score + reasoning。
-#     """
-
-#     others_text = ""
-#     for j, obj in enumerate(others):
-#         others_text += (
-#             f"One agent's answer:  ```{obj['solution']}```, its score is {obj['score']}/10\n"
-#         )
-
-#     prompt = f"""
-# You are participating in a multi-agent debate assisted by a critic.
-
-# Your previous reasoning and answer were:
-# ```{your_solution}```, your score is {your_score}/10
-
-# Here are the previous round's answers and confidence scores from other agents:
-
-# {others_text}
-# Based on these scores:
-
-# - If your score is significantly higher than others, KEEP and DEFEND your reasoning and answer.
-# - If your score is significantly lower, STUDY the highest-scoring agent’s answer and adjust your reasoning accordingly.
-
-# Considering the above information, please provide your reasoning and answer to the original problem:
-# {question}
-
-# Your final answer must end with \\boxed{{answer}}.
-# """
-#     return {"role": "user", "content": prompt}
-
+# ========== Unified Debate Prompt (normal case: use the previous round's answer + score + reasoning) ==========
 
 def construct_unified_debate_prompt(question, your_ans, your_score, your_solution, others):
     max_other_score = max(obj['score'] for obj in others)
@@ -246,7 +151,7 @@ def construct_unified_debate_prompt(question, your_ans, your_score, your_solutio
         for obj in others
     ])
 
-    # 根据分数给出强硬指令
+    # give strict instructions based on the score
     if your_score >= 9:
         instruction = f"""Your score is {your_score}/10 (HIGH). 
 DO NOT change your answer. Only verify your arithmetic is correct.
@@ -269,28 +174,7 @@ Original Problem: {question}. Solve again. End with \\boxed{{answer}}."""
     return {"role": "user", "content": prompt}
 
 
-# ========== Restart Prompt（所有 agent 分数都低） ==========
-# def construct_restart_prompt(question, critic_explanation, prev_solution, prev_answer, prev_score):
-#     """
-#     当所有 agent 的 score 都很低时，对单个 agent 使用的 restart prompt。
-#     显式提供该 agent 的上一轮 reasoning / answer / score / explanation。
-#     """
-#     prev_ans_str = prev_answer if prev_answer is not None else "N/A"
-
-#     return {
-#         "role": "user",
-#         "content": (
-#             "The critic believes your previous reasoning was not correct.\n\n"
-#             "Your previous reasoning and answer were:\n"
-#             f"```{prev_solution}```\n"
-#             f"The critic gave it a confidence score of {prev_score}/10.\n\n"
-#             f"Reason given by the critic: {critic_explanation}\n\n"
-#             "Please restart your reasoning from scratch and independently solve the problem:\n"
-#             f"{question}\n\n"
-#             "Do not simply repeat your previous solution; carefully re-derive the answer step by step.\n"
-#             "End with \\boxed{{answer}}."
-#         ),
-#     }
+# ========== Restart Prompt (all agents' scores are low) ==========
 def construct_restart_prompt(question, critic_explanation, prev_solution, prev_answer, prev_score):
     prompt = f"""Your solution was incorrect (score {prev_score}/10).
 
@@ -340,15 +224,15 @@ if __name__ == "__main__":
 
     client = openai.OpenAI()
 
-    # 记录开始时间
+    # record the start time
     start_time = time.time()
 
-    # 使用 tqdm 显示进度
+    # use tqdm to show the progress
     for data in tqdm(questions[:sample_count], desc="Processing samples", total=sample_count):
         question = data["question"]
         answer = data["answer"]
 
-        # 初始化每个 agent context（第一次 debate 的起点）
+        # initialize each agent context (the starting point of the first debate)
         def init_agent_contexts():
             return [[
                 {
@@ -365,9 +249,9 @@ if __name__ == "__main__":
         for round_idx in range(rounds):
             # print(f"\n========== ROUND {round_idx + 1} ==========")
 
-            # --- 每轮存储结果 ---
+            # --- store the results of each round ---
             answers_this_round = []
-            solutions_this_round = []  # 每个 agent 本轮的完整 reasoning+answer 文本
+            solutions_this_round = []  # the complete reasoning+answer text of each agent in this round
 
             # --- agent inference ---
             for i, agent_context in enumerate(agent_contexts):
@@ -390,7 +274,7 @@ if __name__ == "__main__":
                 ans_number = extract_number(assistant_msg["content"])
                 answers_this_round.append(ans_number)
 
-            # ========== Multi-agent Critic (一次性评分) ==========
+            # ========== Multi-agent Critic (once-per-round scoring) ==========
             critic_messages = construct_multi_critic_message(
                 question,
                 solutions_this_round,
@@ -407,7 +291,7 @@ if __name__ == "__main__":
             scores_this_round, critic_explanations_this_round = parse_multi_critic_output(
                 critic_content, agents
             )
-            # # ----- Debug 输出 -----
+            # # ----- Debug output -----
             # print(f"GT: {extract_number(answer)}")
             # for i in range(agents):
             #     print(f"Agent {i}: answer={answers_this_round[i]}, score={scores_this_round[i]}")
@@ -423,7 +307,7 @@ if __name__ == "__main__":
             # ==== Condition B: All agents low-confidence ====
             if all(s < LOW_THRESHOLD for s in scores_this_round):
 
-                # 1) 对每个 agent 构造带 explanation + 上一轮 reasoning/answer 的 restart prompt
+                # 1) construct the restart prompt with explanation + the previous round's reasoning/answer for each agent
                 new_agent_contexts = []
                 for i in range(agents):
                     expl = critic_explanations_this_round[i]
@@ -439,8 +323,8 @@ if __name__ == "__main__":
                     )
 
                 agent_contexts[i].append(restart_prompt)
-                # 2) 重置轮数，从 0 再来 3 轮
-                continue  # 进入下一轮（新的一轮）
+                # 2) reset the round number, start from 0 again for 3 rounds
+                continue  # go to the next round (new round)
 
             # ===================================================
             #      Normal Case: Construct Unified Score-Aware Debate Prompt
@@ -451,7 +335,7 @@ if __name__ == "__main__":
                 your_score = scores_this_round[i]
                 your_solution = solutions_this_round[i]
 
-                # 其他 agents 的 answer + score + reasoning
+                # the answer + score + reasoning of other agents
                 others = []
                 for j in range(agents):
                     if j == i:
@@ -465,13 +349,13 @@ if __name__ == "__main__":
                 unified_prompt = construct_unified_debate_prompt(
                     question, your_ans, your_score, your_solution, others
                 )
-                # unified_prompt 作为该 agent_context 的下一条 user 消息
+                # unified_prompt as the next user message for the agent_context
                 agent_context.append(unified_prompt)
 
         # save logs
         generated_description[question] = (agent_contexts, answer)
 
-    # 记录结束时间并计算总时间和平均时间
+    # record the end time and calculate the total and average time
     end_time = time.time()
     total_time = end_time - start_time
     per_sample_time = total_time / sample_count if sample_count > 0 else 0
