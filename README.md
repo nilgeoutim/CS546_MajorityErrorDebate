@@ -44,7 +44,7 @@ To run the multi-agent debate with our proposed **Confidence Score**, use the fo
 Version Differences: Version 1 (Local View): The critic evaluates each agent individually; Version 2 (Global View): The critic assesses all agents simultaneously to resolve conflicts and mitigate collective hallucinations. Note: While Version 2 is the primary method presented in our paper, we include Version 1 as it occasionally achieves superior performance in empirical trials.
 
 To run the debate with our proposed **Role Specialization** ：
-
+    
     python gen_gsm_role_specialization.py
 
 
