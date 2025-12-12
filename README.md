@@ -1,6 +1,6 @@
 # Majority Errors in Multi-Agent Debate: Analysis and Framework Design
 
-### [Project Paper](./CS546_GP.pdf) | [Original Framework]([https://github.com/composable-models/llm_debate](https://github.com/composable-models/llm_multiagent_debate))
+### [Project Paper](./CS546_GP.pdf) | [Original Framework](https://github.com/composable-models/llm_multiagent_debate)
 
 [Meitong Liu](mailto:meitong4@illinois.edu),
 [Maojie Xu](mailto:maojiex2@illinois.edu),
