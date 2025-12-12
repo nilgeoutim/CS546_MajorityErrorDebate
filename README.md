@@ -52,6 +52,8 @@ To evaluate the potential of MAD under **High-Quality Supervision** (using a str
 
     python gen_gsm_better_supervision.py
 
+The defalut settings of stronger critic used is GPT-5.1, which is also used in the evaluation process. This method is intended to discover the potential of MAD under the high-quality supervision. The stronger model will not provide direct answer, only justification and hints are provided to guide the converge.
+
 **Visualization:**
 
 To reproduce the analysis figures (Accuracy Trends, Flip Dynamics) shown in the report:
