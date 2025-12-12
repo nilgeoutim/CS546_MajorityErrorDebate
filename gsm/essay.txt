@@ -1,0 +1,787 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[final]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+\usepackage{enumitem}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Overcoming Majority Errors in Multi-Agent Debate: Analysis and Framework Design}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+\author{
+\begin{tabular}{ccc}
+Meitong Liu & Jieyi Zhao & Wangjia Zhan \\
+meitong4@illinois.edu & jieyi3@illinois.edu & wangjia2@illinois.edu \\
+\\
+Maojie Xu & Ian Jiang \\
+maojiex2@illinois.edu & jisheng3@illinois.edu \\
+\end{tabular}
+}
+\newcommand{\wangjia}[1]{{\color{red}[Wangjia: #1]}}
+
+% \author{First Author \\
+%   Affiliation / Address line 1 \\
+%   Affiliation / Address line 2 \\
+%   Affiliation / Address line 3 \\
+%   \texttt{email@domain} \\\And
+%   Second Author \\
+%   Affiliation / Address line 1 \\
+%   Affiliation / Address line 2 \\
+%   Affiliation / Address line 3 \\
+%   \texttt{email@domain} \\}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+% This document is a supplement to the general instructions for *ACL authors. It contains instructions for using the \LaTeX{} style files for ACL conferences.
+% The document itself conforms to its own specifications, and is therefore an example of what your manuscript should look like.
+% These instructions should be used both for papers submitted for review and for final versions of accepted papers.
+
+Multi-agent debate (MAD) has been shown to improve the reasoning abilities of large language models (LLMs) by enabling multiple agents to exchange responses and reach consensus. However, a more challenging setting has been rarely examined: when most agents initially produce incorrect answers. We refer to this as the majority-error problem. 
+% In such cases, we find that correct agents often shift toward the incorrect majority, causing the debate to fail. 
+This project studies how MAD behaves in these majority-error problems, evaluates its performance as the number of agents and debate rounds increases, and examines whether the gains attributed to debate arise from the process itself or simply from additional sampling. We further explore improvements such as adding confidence scores from an external critic model and introducing specialized roles that encourage diverse reasoning among agents. These additions make the debate more stable and lead to better outcomes on difficult questions. Our goal is to better understand the limitations of naive MAD in challenging scenarios and identify ways to make it more reliable. Code is released in  \url{https://github.com/nilgeoutim/CS546_MajorityErrorDebate}
+
+\end{abstract}
+
+\section{Introduction}
+\label{Intro}
+Multi-agent Debate (MAD) frameworks have emerged as a promising approach for improving the reasoning abilities of Large Language Models (LLMs)~\citep{du2023improvingfactualityreasoninglanguage,chan2023chatevalbetterllmbasedevaluators,khan2024debating}. In these systems, multiple LLM agents engage in iterative discussions to refine their initial answers and converge on a solution through a majority vote. MAD has been reported to not only boost accuracy on complex reasoning problems and factual QAs~\citep{du2023improvingfactualityreasoninglanguage}, but also generalize to enhance performance in related tasks, such as translation~\citep{liang2024encouragingdivergentthinkinglarge} and negotiation~\citep{fu2023improving}, and assist in model self-improvement~\citep{subramaniam2025multiagent}.
+
+However, a critical situation has been less examined: how effective is multi-agent debate when the majority of agents initially produce incorrect responses and only a few hold the right point? This would happen when the system is facing particularly challenging problems. Do the correct tend to conform to the opposite majority, leading to a "wisdom of crowds" failure where the entire system converges on an incorrect consensus? Previous studies reported improved accuracy of multi-agent debate systems over majority voting without debate~\citep{du2023improvingfactualityreasoninglanguage}, indicating that a system where the incorrect outweigh the correct can still benefit from collaborative reasoning. Nevertheless, these gains are often inconsistent across models and datasets, and marginal compared to the remaining percentage that majority voting fails to solve~\citep{wynn2025talkisntcheapunderstanding}. In addition, the influencing factors and underlying drivers, such as the number of times a model is sampled and the ratio of correct and incorrect responses an agent receives, remain unclear.
+
+
+In this project, we focus on the setting where the initial majority of agents is incorrect. We construct a subset of GSM8K containing problems for which a three-agent majority vote fails, and use this dataset to conduct a detailed evaluation of how multi-agent debate behaves under majority-error conditions. Our analysis shows that naïve MAD exhibits strong fluctuations across debate rounds, that correct agents often flip to incorrect answers at nearly the same rate as the reverse, and that accuracy gains are largely explained by increased sampling rather than the debate process itself.
+
+Beyond analysis, we investigate simple modifications to stabilize debate. We incorporate confidence scores from a separate critic model and introduce specialized reasoning roles to encourage diverse perspectives among agents. Both additions significantly reduce unstable flipping behavior and yield more consistent improvements on difficult problems.
+
+Overall, this work provides a deeper understanding of why MAD struggles in majority-error scenarios and demonstrates practical directions for making debate-based systems more reliable on challenging reasoning tasks.
+
+
+% \section{Related Work}
+
+% Existing works related to whether multi-agent debate can improve performance can be broadly categorized based on their positive or negative views.
+
+% {\bf Debate as a Performance Enhancer.}
+% Multi-agent debate is shown to improve factuality, reasoning, and creative exploration by enabling agents to expose and repair errors, diversify solution paths, and reach more reliable judgments than single agents. Evidence spans task-solving (e.g., math/commonsense) where agents iteratively critique and refine reasoning, structured prompts that elicit divergent thinking across candidate solutions, and multi-judge evaluation setups that aggregate arguments to reduce single-judge variance \cite{du2023improvingfactualityreasoninglanguage, liang2024encouragingdivergentthinkinglarge, chan2023chatevalbetterllmbasedevaluators}. 
+
+% {\bf Limits and Failure Modes.}
+% Recent works show these benefits are not universal: debate can reduce accuracy in heterogeneous groups when weaker agents’ flawed arguments sway stronger ones\cite{wynn2025talkisntcheapunderstanding}. Furthermore, LLM judges and debaters exhibit style-driven biases (verbosity, position/order, confidence) that make persuasive but wrong arguments disproportionately influential \cite{saito2023verbositybiaspreferencelabeling, shi2025judgingjudgessystematicstudy}.
+
+% {\bf Positioning of our work.}
+% Existing study suggest that conformity and sycophancy count in RLHF-tuned LLMs, where models over-agree with peer assertions and are swayed by rhetorical/style biases \cite{choi2025empiricalstudygroupconformity, sharma2025understandingsycophancylanguagemodels, wei2024simplesyntheticdatareduces}. Our goal is to keep correct minority views from being drowned out while still gaining the benefits of collaboration, directly tackling conformity and sycophancy effects seen in prior work.
+\section{Related Work}
+
+Existing work related to whether MAD can improve performance can be broadly categorized based on their positive or negative views.
+
+{\bf Debate as a performance enhancer.}
+Multi-agent debate is shown to improve the performance of accuracy, reasoning, as well as reliability by enabling agents to be exposed to diverse solution paths, reconsider and resolve errors to reach a more reliable response than single agents. There is existing work supporting this claim, including: task-solving problems like math and commonsense where agents iteratively critique and refine each other’s reasoning, structured prompts that encourage different thinking paths, and multi-judge evaluation setups that combine arguments to reduce single-judge noise~\citep{du2023improvingfactualityreasoninglanguage, liang2024encouragingdivergentthinkinglarge, chan2023chatevalbetterllmbasedevaluators}.
+
+{\bf Limits and failure modes.}
+Some recent work shows that these benefits mentioned do not always hold. In groups with heterogeneous agents, debate may lower accuracy when weaker agents provide bad arguments that sway stronger ones\citep{wynn2025talkisntcheapunderstanding}. Furthermore, LLM judges and debaters show style biases, including verbosity, earlier positions, and confidence tone that make persuasive but wrong arguments more influential~\citep{saito2023verbositybiaspreferencelabeling, shi2025judgingjudgessystematicstudy}.
+
+{\bf Positioning of our work.}
+Prior work shows that RLHF-tuned LLMs often tend to conform and act sycophantically: they over-agree with others and are influenced by rhetorical and style biases~\citep{choi2025empiricalstudygroupconformity, sharma2025understandingsycophancylanguagemodels, wei2024simplesyntheticdatareduces}. Our goal is to keep correct minority views from being drowned out while still gaining the benefits of collaboration, directly tackling conformity and sycophancy effects seen in prior work.
+
+
+{\bf MAD in majority-error settings.}
+Despite growing interest in debate-based methods, relatively little work examines how debate behaves when most agents begin with incorrect answers. Existing observations indicate that, on such challenging questions, debates may be unstable: correct positions are overturned nearly as often as they are recovered, and discussions can reinforce the wrong majority rather than correct it. These patterns raise questions about whether performance gains in prior work stem from debate dynamics themselves or primarily from increased sampling. This gap motivates a closer study of MAD specifically under majority-error conditions.
+
+{\bf Methods for improving debate.}
+A variety of techniques have been proposed to increase debate robustness, including introducing external feedback signals and encouraging better confidence calibration. Recent work shows that explicitly modeling or expressing confidence can improve self-consistency and debate quality~\citep{Taubenfeld_2025, lin2025enhancingmultiagentdebateperformance}. Other research promotes the use of diverse reasoning strategies in multi-agent setups~\citep{liang2024encouragingdivergentthinkinglarge}, and demonstrates that structured roles or curated reasoning traces can strengthen agents’ ability to critique and defend arguments effectively. Building on these directions, our work examines debate in majority-error scenarios and introduces lightweight mechanisms—confidence scoring and role specialization—that help stabilize debate and improve performance on difficult problems.
+
+% To produce a PDF file, pdf\LaTeX{} is strongly recommended (over original \LaTeX{} plus dvips+ps2pdf or dvipdf).
+% The style file \texttt{acl.sty} can also be used with
+% lua\LaTeX{} and
+% Xe\LaTeX{}, which are especially suitable for text in non-Latin scripts.
+% The file \texttt{acl\_lualatex.tex} in this repository provides
+% an example of how to use \texttt{acl.sty} with either
+% lua\LaTeX{} or
+% Xe\LaTeX{}.
+
+
+% \section{Proposed Approach}
+
+% As mentioned in Section~\ref{Intro}, our study will proceed in two stages. 
+% First, we will analyze the \textit{correct–error flipping} phenomenon to identify its root cause — specifically, whether it depends more on the majority influence or on the correctness of reasoning across diverse datasets and baseline models. 
+% After completing this analysis, we will design a robust MAD framework from a three-phase attempt:
+
+% \begin{enumerate}[left=0pt, topsep=0.5pt]
+%     \item \textbf{Direct prompting.} 
+%     We will explore prompts that explicitly encourage critical evaluation rather than passive agreement. 
+%     Instead of the conventional cooperative prompt 
+%     (\textit{``Consider the solutions from other agents and provide an updated answer''}), 
+%     we want to try some more critical alternatives. (For example, \textit{``Before providing your final answer, critique each peer’s response by identifying one strength and one potential flaw in their reasoning. 
+%         Only after performing this critique, provide your final answer.''})
+    
+%     \textbf{\textit{Hypothesis:}} Such prompts would shift the agent’s role from a sycophantic collaborator to a critical evaluator. By requiring explicit critique, it incentivizes correct agents to challenge flawed reasoning rather than passively conform to it.
+
+%     \item \textbf{Confidence-weighted debate.}
+%     We will incorporate \textit{confidence scores} to guide whether agents should conform or defend their stance. These scores can be self-generated through prompting or produced by a separate \textit{critic agent} (inspired by critic-actor~\citep{christiano2023deepreinforcementlearninghuman}).
+%     After each reasoning round, the critic observes all agents' responses in the next round and evaluates them individually, assigning a confidence score (e.g., 1–10) to reflect the soundness of their reasoning. These scores can be used as feedback or as contextual signals in subsequent rounds, allowing agents to weigh peer arguments by credibility. The critic can be fine-tuned on debate-style data to produce more accurate and calibrated scoring. 
+    
+%     \textbf{\textit{Hypothesis:}} Stronger models are typically better calibrated, and higher critic-assigned confidence tends to align with correctness. By making explicit confidence cues, agents are encouraged to preserve justified answers and discount weak, low-confidence reasoning.
+
+
+%     \item \textbf{Curated data finetuning.} Several key model abilities that circumvent a successful debate when facing an incorrect majority are to critically examine responses to identify reasoning flaws, defend a valid point instead of conforming to the crowd, capture hard-to-catch valuable signals from other agents, and admit errors with a refined answer. We aim to explicitly elicit such abilities by finetuning models on curated conversation data. Specifically, for a given question, we collect “defending” samples by synthesizing a conversation history where the correct answer is the initial response and most alternatives are incorrect, and then directly prompting a model to identify weaknesses in the alternatives and stand on its original view. Similarly, the “correcting” samples are collected with an incorrect answer as the initial response, several incorrect alternatives, a few correct ones, and the model is asked to switch to the correct answer with sufficient reasoning. 
+    
+%     \textbf{\textit{Hypothesis:}} As such, we hope to improve models’ overall debate ability, making a correct agent more firm and an incorrect agent more sharp to insights and more willing to change. Ideally, this would make the system more robust to majority errors.
+% \end{enumerate}
+\section{Proposed Approach}
+
+Guided by the observations in Section~\ref{Intro}, our approach focuses on understanding why naive multi-agent debate fails under majority-error settings and on exploring mechanisms that make debate more robust. We consider two concrete extensions to the standard MAD framework—confidence score and role specialization—and evaluate their effectiveness on majority-error questions. We additionally conduct a small exploratory study on prompt-level interventions.
+
+\subsection{Confidence Score}
+
+One weakness of naive MAD is that all responses are treated equally, regardless of their reasoning quality. As our flip analysis shows, incorrect arguments often appear persuasive enough to pull correct agents toward the wrong majority. To mitigate this, we implement a \textbf{reciprocal scoring mechanism}. After each generation round, each agent temporarily adopts a \textit{'Critic' persona} to evaluate the solutions of its peers. These agents assess the logic and computation of a given answer and assign a confidence score (Logic/Compute) along with feedback. These scores and critiques are then anonymized (mostly) and broadcast back to the respective agents in the next round. This ensures that acceptance of a solution is based on \textit{peer-validated quality} rather than \textit{distinct popularity}.
+
+The critic evaluates arguments for coherence and mathematical correctness and outputs a scalar score (1-10) that is fed back into the next debate round as shown in Figure \ref{fig:workflow}(b). Agents then update their belief conditioned on these scores, allowing stronger reasoning to have more influence than misleading but popular opinions.
+
+This mechanism stabilizes debate dynamics and encourages agents to defend justified answers while discounting inconsistent reasoning. Our results in Section~\ref{sec:results} show that incorporating critic scores leads to consistent performance gains across rounds, especially when a stronger model (GPT-5.1) is used as the critic.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{figures/workflow.png}
+    \caption{
+        Overview of our debate frameworks:
+        (a) naive multi-agent debate,
+        (b) debate with confidence scoring,
+        (c) debate with confidence scoring and role specialization.
+    }
+    \label{fig:workflow}
+\end{figure}
+
+\subsection{Role Specialization}
+
+Another limitation of naive MAD is the homogeneity of agents: identical prompting leads them to follow similar reasoning paths and makes the system more vulnerable to group errors. Inspired by prior work on structured reasoning and diverse deliberation, we explore a simple form of role specialization as shown in Figure \ref{fig:workflow}(c).
+
+We design three complementary roles:
+\begin{itemize}[left=6pt]
+    \item \textbf{Logician}: emphasizes step-by-step symbolic reasoning,
+    \item \textbf{Skeptic}: focuses on identifying potential errors in other agents' arguments,
+    \item \textbf{Programmer}: solves the problem via executable Python code. This leverages the interpreter's rigor to minimize hallucination episodes and provides objective verification for other agents.
+\end{itemize}
+
+These roles enforce diversity in reasoning structure and reduce the chance that all agents fall into the same incorrect pattern. As shown later, this specialization produces more stable improvements over debate rounds and outperforms the naive MAD baseline on GSM-MajorityError.
+
+% a multi-agent debate framework capable of self-evolution and maintaining cognitive diversity. which is an extension of the Multiagent Finetuning framework introduced by Subramaniam et al. (2025)
+
+% The core idea of this framework is that the system's robustness should not rely solely on single-debate tactics, but should instead stem from an evolutionary mechanism that cultivates agents' independent "expertise" through continuous learning.
+
+% Our approach is primarily built upon the concept of Multiagent Finetuning and combines it with Metacognitive Role Specialization. This is designed to fundamentally counter the "tyranny of the majority" effect and circumvent the inherent biases introduced by training data.
+
+% \subsection{Diversity Preservation via Independent Finetuning}
+
+% We argue that the key to resisting erroneous consensus is maintaining cognitive diversity within the system. Our framework is designed to use the debate process itself as a core mechanism for generating high-quality, specialized training data for a society of agents.
+% In each round of debate, the complete reasoning chains of all agents, along with their mutual questioning and revisions, are recorded to form a rich, interactive dataset.
+% The core of our approach is independent specialization. After each debate round, the system finetunes the agents, with a crucial distinction: each agent is finetuned independently, primarily using the data it generated itself. This mechanism avoids the "diversity collapse" that is a common failure mode in traditional self-improvement methods. Through this specialized finetuning, agents are encouraged to explore and solidify their unique reasoning paths, even if those paths were in the minority initially. This process allows the system to cultivate "expert" agents with deep insights on specific topics.
+
+% \subsection{Metacognitive Role Specialization}
+
+% To further enhance the depth and criticality of the debate, and to circumvent the superficial 'role-playing' that can arise from inherent model biases such as sycophancy, we introduce metacognitive roles. This approach extends the 'critic agent' concept by focusing agents not on specific ideological stances, but rather on the quality and structure of the reasoning process itself.
+
+% \section{Experiment Plan}
+% \subsection{Research Questions}
+
+% This study explores the fundamental question of when and why
+% multi-agent debate (MAD) succeeds or fails as a mechanism for collective reasoning.
+% While previous work~\citep{du2023improvingfactualityreasoninglanguage} shows
+% that debate can modestly improve accuracy,
+% these gains often vanish when most agents start from incorrect positions~\citep{wynn2025talkisntcheapunderstanding}.
+% We therefore ask, at a higher level:
+
+% \textbf{(1)} How robust is debate when the initial majority is wrong?  
+% \textbf{(2)} How do scale factors---the number of agents and debate rounds---affect convergence toward truth versus amplification of error?  
+% \textbf{(3)} Are observed improvements genuine reasoning effects or artifacts of increased sampling?  
+% \textbf{(4)} What interaction dynamics govern how correct and incorrect views evolve over time?
+
+% Together, these questions aim to reveal whether multi-agent debate fosters rational consensus
+% or collapses into coordinated error under majority bias.
+
+% \subsection{Experimental Setup}
+% We conduct all experiments using three open-weight language models—
+% \textbf{Phi-3}~\cite{abdin2024phi3technicalreporthighly}, 
+% \textbf{Mistral}~\citep{jiang2023mistral7b}, and 
+% \textbf{LLaMA-3}~\citep{grattafiori2024llama3herdmodels}—as debating agents under both 
+% homogeneous (same-model) and heterogeneous (mixed-model) settings.
+% Following \citet{du2023improvingfactualityreasoninglanguage}, 
+% each experiment proceeds in three stages: independent answer generation, 
+% multi-round debate, and final majority voting.
+% We vary the number of agents ($N\in\{3,5,7\}$) and debate rounds 
+% ($R\in\{1,3,5\}$) to examine how interaction scale influences convergence and 
+% error propagation.
+
+% Experiments are conducted across seven reasoning and factuality benchmarks, 
+% including \textbf{Arithmetic}, \textbf{GSM8K}, \textbf{MMLU}, 
+% \textbf{CommonSenseQA}, \textbf{Biographies}, 
+% \textbf{Chess Move Prediction}, and \textbf{Chess Move Validity}.
+% To study “majority-error” conditions, we preselect samples where at least 
+% 60\% of initial responses are incorrect.
+% All models are evaluated in a black-box setting using identical prompts and 
+% hyperparameters, with results averaged over three runs.
+
+
+% \subsection{Evaluation Metrics}
+% To quantitatively assess performance and debate dynamics, we will use two key metrics:
+% \begin{itemize}[left=0pt, topsep=0.5pt]
+%     \item \textbf{Final Accuracy}: Our primary metric, measuring the percentage of problems correctly solved after the debate.
+%     \item \textbf{Opinion Flip Rates}: To conduct a fine-grained analysis of persuasion, we will measure:
+%     \begin{itemize}[left=0pt, topsep=0.5pt]
+%         \item \textbf{Incorrect-to-Correct (I$\to$C) Flip Rate}: The percentage of initially incorrect agents that are corrected.
+%         \item \textbf{Correct-to-Incorrect (C$\to$I) Flip Rate}: The percentage of initially correct agents that are incorrectly persuaded by the majority.
+%     \end{itemize}
+% \end{itemize}
+
+
+% \subsection{Results and Analysis}
+\section{Experiments}
+% \subsection{Research Questions}
+% \wangjia{This paragraph is better to merge into the introduction. @maojie, could you revise a little bit.}
+% Our experiments aim to answer the following questions:
+
+% \noindent\textbf{(1)} How does naive multi-agent debate behave on problems where the initial majority is wrong?  
+% \textbf{(2)} How do the number of agents and debate rounds affect accuracy under majority-error conditions?  
+% \textbf{(3)} Are the gains attributed to multi-agent debate genuine benefits of interaction, or do they simply arise from additional sampling?  
+% \textbf{(4)} Can simple extensions—such as confidence scoring or role specialization—improve debate stability and correctness?
+
+% These questions focus on whether debate corrects errors or reinforces them when most agents begin with an incorrect belief.
+
+\subsection{Experimental Setup}
+% \wangjia{this could be the first paragraph for section 4}
+We follow the standard MAD protocol introduced by \citet{du2023improvingfactualityreasoninglanguage}, using \textbf{GPT-3.5-Turbo} as our debating agent unless otherwise noted. Each experiment consists of:
+
+\begin{itemize}[left=0pt, topsep=0.5pt]
+    \item Independent answer generation by $N$ agents,
+    \item Multi-round debate for $R$ rounds,
+    \item Final majority voting.
+\end{itemize}
+
+To study the majority-error scenario, we extract 225 examples from the GSM8K test set where a majority vote among three independently sampled agents is incorrect. We refer to this subset as \textbf{GSM-MajorityError}.
+
+We vary the number of agents $N\in\{3,5,7\}$ and debate rounds $R\in\{1,3,5\}$ to examine how debate scale influences stability. All experiments use identical prompts and temperature settings, and results are averaged over three runs.
+
+For our improved methods, we consider:
+
+\begin{itemize}[left=0pt, topsep=0.5pt]
+    \item \textbf{Confidence-weighted debate:} a separate critic model assigns confidence scores to each response.
+    \item \textbf{Role specialization:} agents adopt complementary roles (logician, skeptic, programmer) with structured prompting.
+    \item \textbf{High-Level Supervision:} GPT-5.1 acts as the critic to evaluate whether high-quality external feedback stabilizes debate. The stronger critic only help correct the logical errors or calculation mistakes and provide hints to help agents converge to the correct answer in the next round.
+\end{itemize}
+
+As an additional baseline, we compare MAD against \textbf{repeated sampling} with an \textit{effective sample size} equal to $N \times R$.
+
+\subsection{Evaluation Metrics}
+
+We evaluate system behavior using:
+
+\textbf{Final Accuracy}: correctness after the final vote.
+
+\textbf{Flip Statistics}:  
+\begin{itemize}[left=0pt, topsep=0.5pt]
+    \item Incorrect-to-Correct (I$\to$C): proportion of initially wrong agents that switch to the correct answer.
+    \item Correct-to-Incorrect (C$\to$I): proportion of initially correct agents that are persuaded into adopting the wrong answer.
+\end{itemize}
+
+These dynamics reveal whether interaction improves collective reasoning or amplifies collective error.
+
+
+\section{Results}
+\label{sec:results}
+
+In this section, we present empirical findings on how multi-agent debate behaves under majority-error conditions and evaluate whether our proposed extensions improve system stability and accuracy. We organize the results around four central questions introduced earlier.
+
+\subsection{Naive MAD Under Majority-Error Conditions}
+
+Across GSM-MajorityError, naive multi-agent debate shows limited ability to recover from an incorrect initial majority. We can observed from Figure~\ref{fig:baseline-accuracy} that as the number of debate rounds increases, accuracy fluctuates substantially rather than converging. In many cases, additional rounds even reduce accuracy, indicating that debate tends to amplify erroneous arguments instead of correcting them. Accuracy does increase mildly as the number of agents grows, but this result cannot directly lead to conclusion that MAD works as sampling also contributes.
+
+Increasing the number of agents provides only modest improvements, and most of the gains occur before any debate takes place as shown in Figure~\ref{fig:trend-agent-num}. Accuracy fluctuates rather than improving as rounds increase, demonstrating the instability of naive MAD on difficult GSM-MajorityError problems. This further suggests that naive MAD benefits mainly from increased sampling rather than meaningful interaction among agents.
+
+% Figure~\ref{fig:baseline-accuracy} illustrates this instability across different numbers of agents and debate rounds. 
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\linewidth]{figures/agent_num_debate_rounds.png}
+    \caption{
+        Naive multi-agent debate performance on GSM-MajorityError.
+        % (a) Accuracy increases mildly as the number of agents grows, but most gains come from initial sampling.
+        % (b) Accuracy across debate rounds fluctuates rather than converging, indicating instability of naive MAD.
+    }
+    \label{fig:baseline-accuracy}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{figures/accuracy_trend.png}
+    \caption{
+        Accuracy trend across debate rounds for naive multi-agent debate.
+        % under majority-error conditions. 
+    }
+    \label{fig:trend-agent-num}
+\end{figure}
+
+
+\subsection{Flip Dynamics During Debate}
+
+To understand why accuracy degrades, we examine how agents change their opinions across rounds. Surprisingly, we find that correct-to-incorrect flips occur almost as frequently as incorrect-to-correct flips as observed in Figure~\ref{fig:flip-stats}. This symmetry indicates that debate does not reliably guide agents toward the correct answer—correct agents are just as easily persuaded in the wrong direction as incorrect agents are persuaded in the right one.
+
+Moreover, the proportion of agents that remain correct (C→C) increases only marginally with more agents in Figure~\ref{fig:flip-stats}, reinforcing the observation that improvements come from sampling effects rather than the debate mechanism itself.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{figures/flip_dynamics.png}
+    \caption{
+        Opinion transition dynamics across majority-error cases.
+        % For each agent count (A = 3, 4, 5), we show the number of agents that remained correct (C→C),
+        % were corrected (I→C), flipped incorrectly (C→I), or remained incorrect (I→I).
+        % Correct-to-incorrect flips occur nearly as often as incorrect-to-correct flips,
+        % illustrating the instability of naive multi-agent debate.
+    }
+    \label{fig:flip-stats}
+\end{figure}
+
+
+\subsection{Is Debate Better Than Repeated Sampling?}
+
+We further compare MAD with a repeated sampling baseline that uses the same effective sample size ($N \times R$). Across all settings, repeated sampling outperforms naive MAD. When computation is controlled, majority voting over independent samples yields higher accuracy and avoids the fluctuations observed in debate.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{figures/confidence_vote.png}
+    \caption{
+        Comparison between naive MAD and repeated sampling under equal effective sample size ($N \times R$).
+        Majority vote consistently outperforms MAD, showing that improvements attributed to debate largely result from increased sampling rather than the debate dynamics itself.
+    }
+    \label{fig:sampling}
+\end{figure}
+
+These results align with recent theoretical arguments suggesting that debate-induced belief updates behave like a martingale and do not systematically increase the probability of correctness. In contrast, majority voting over more independent samples provides exponentially better concentration.
+
+
+
+
+% \subsection{Improvements from Confidence Scoring and Role Specialization}
+
+% We next evaluate our proposed extensions. Introducing a confidence score from a separate critic stabilizes the debate process and reduces harmful persuasion. When the critic is a stronger model (e.g., GPT-5.1), the gains are particularly substantial.
+
+% Role specialization further improves performance by introducing structured diversity in reasoning. The logician, skeptic, and programmer perspectives reduce correlated errors and help highlight inconsistencies that naive homogeneous agents often overlook.
+
+\subsection{Improvements from Confidence Scoring and Role Specialization}
+
+We next evaluate our proposed extensions. Introducing a confidence score from a separate critic stabilizes the debate process and reduces harmful persuasion.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{figures/accuracy_trend_A3.png}
+    \caption{
+        Accuracy trend under majority-error conditions with 3 debating agents (A = 3).
+        Confidence-weighted debate improves stability over naive MAD, while adding role
+        specialization yields the strongest and most consistent gains across rounds.
+    }
+    \label{fig:accuracy-A3}
+\end{figure}
+
+Role specialization further improves performance by introducing structured diversity in reasoning. The logician, skeptic, and programmer perspectives reduce correlated errors and help highlight inconsistencies that naive homogeneous agents often overlook.
+
+\subsection{Potential of Improving the Performance of MAD }
+Based on the previous observation, repeated sampling with the majority often outperforms MAD and the critic model, and role specialization with agents of the same level
+brings limited help. This result drives us to explore the potential of seeking high-quality supervision that can effectively increase agents’ belief in the correct answer.
+
+As shown in Figure. \ref{fig:high-level-supervision}, empowered by high-level critic(GPT-5.1 in this experiment), the performance of debate grows stably, indicting the value of insight. To be more specific, weak agents can realize their mistakes and correct accordingly with feedback provided by stronger model during the debate.
+
+
+\wangjia{Figure 3,4,5,6 do not have a reference within the context. and the caption seems have repeated words with the context. Should simplify the caption.}
+
+
+% Together, these mechanisms yield stable and monotonic gains across debate rounds, 
+% forming a sharp contrast to the fluctuation and unreliability observed in naive MAD.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{figures/improved_critic_results.png}
+    \caption{
+        Performance comparison of naive MAD (no critic), supervision of same level and high-level supervision.
+    }
+    \label{fig:high-level-supervision}
+\end{figure}
+
+\section{Limitations and Future Work}
+
+While this study offers critical insights into the instability of multi-agent debate (MAD) under majority-error conditions, we acknowledge several limitations that define the scope of our findings and outline directions for future research.
+
+\noindent \textbf{Task Generalizability:} Our evaluation focuses on arithmetic reasoning (GSM8K), where solutions are objectively verifiable. It remains an open question whether the observed dynamics—specifically the high rate of correct-to-incorrect flips—persist in open-ended or subjective tasks (e.g., creative writing or ethical reasoning), where consensus may be driven by rhetorical style rather than factual correctness.
+
+\noindent \textbf{Reliance on External Supervision:} The performance gains observed in our \textit{Confidence-Weighted Debate} depend on an external, stronger critic (GPT-5.1). This introduces an oracle dependency that may not be feasible in real-world deployments. Future work should investigate methods for \textit{intrinsic} confidence calibration, allowing agents to weigh peer contributions based on internal reasoning certainty without shifting the computational burden to a superior supervisor.
+
+\noindent \textbf{Granularity of Interaction Analysis:} Our current analysis relies on aggregate accuracy and flip statistics. We do not explicitly model the linguistic mechanisms of persuasion—such as why specific incorrect arguments successfully sway correct agents. A fine-grained analysis of argument quality, reasoning structure, and conversational dynamics is necessary to fully disentangle the effects of genuine deliberation from mere conformity.
+
+
+\section{Conclusion}
+
+Our findings reveal several important insights into how multi-agent debate behaves under majority-error conditions and why naive debate often fails to provide reliable improvements.
+
+First, the flip analysis shows that debate does not consistently move agents toward the correct answer. On majority-error questions, the rate of correct-to-incorrect flips is nearly as high as the reverse, suggesting that debate can amplify the wrong majority rather than help agents recover from it. This is consistent with the fluctuations observed across debate rounds: instead of converging toward truth, naive MAD frequently oscillates or degrades as rounds progress.
+
+Second, while increasing the number of agents improves accuracy, most of the gain comes from the initial round before any debate occurs. This indicates that the benefit largely comes from additional sampling rather than interaction. Our comparison with repeated sampling supports this view: when controlling for effective sample size, repeated sampling outperforms multi-agent debate. These results align with recent theoretical work suggesting that the expected belief of an agent under debate follows a martingale process, which limits the ability of debate alone to systematically strengthen correct beliefs.
+
+The improved frameworks shed light on where the potential of MAD actually lies. Confidence-weighted debate stabilizes the system by giving agents a more reliable signal of reasoning quality. When a stronger model such as GPT-5.1 serves as the critic, performance improves markedly, showing that high-quality feedback can correct the weaknesses of homogeneous debate. Likewise, role specialization introduces diversity in reasoning styles, helping the system avoid failure modes where all agents fall into the same incorrect pattern. Although simple, both mechanisms consistently outperform naive MAD in the majority-error setting.
+
+Taken together, these observations suggest that debate among equivalent agents is insufficient for correcting majority errors, but debate augmented with structured feedback or diverse perspectives can meaningfully improve robustness. Rather than viewing debate as a process that automatically enhances reasoning, our results point to a more nuanced understanding: MAD is effective only when the system provides explicit signals that counteract majority bias or guide agents toward more reliable reasoning paths.
+
+\section{Team Contribution}
+
+All team members contributed substantially to the project.  
+Below we summarize the primary responsibilities of each member.
+
+\textbf{Meitong Liu} worked on model experimentation, including running debate pipelines and analyzing majority-error behaviors. She also contributed to writing and refining several sections of the report.
+
+\textbf{Jieyi Zhao} conducted model evaluations, examined flipping dynamics, and analyzed how performance scales with agents and rounds. He contributed to organizing experimental results and writing the results section of the report.
+
+\textbf{Wangjia Zhan} participated in model reasoning experiments and assisted in evaluating improved debate frameworks. He contributed to the related work discussion and helped draft parts of the introduction and analysis.
+
+\textbf{Maojie Xu} contributed to running debate experiments and interpreting system behaviors. He also participated in writing and editing the methods and discussion sections of the report.
+
+\textbf{Ian Jiang} assisted with experiment execution, model reasoning analysis, and comparison with theoretical insights. He contributed to writing the theoretical motivation and the limitations section, as well as final editing of the paper.
+
+
+All members participated in weekly discussions, experimental planning, and the preparation of the final presentation and report.
+
+
+\section{Code Availability}
+
+All code used in this work is publicly available at:  
+\url{https://github.com/nilgeoutim/CS546_MajorityErrorDebate}
+
+
+% We expect multi-agent debate to improve performance over single-agent and
+% majority-vote baselines on structured reasoning tasks such as
+% \textbf{GSM8K} and \textbf{Arithmetic}, while showing smaller gains on
+% open-ended tasks like \textbf{Biographies} and \textbf{CommonSenseQA}.
+% Homogeneous groups are anticipated to converge more reliably than
+% heterogeneous ones, with accuracy increasing up to moderate debate rounds
+% before plateauing or declining due to over-conformity.
+
+% \section{Preamble}
+
+% The first line of the file must be
+% \begin{quote}
+% \begin{verbatim}
+% \documentclass[11pt]{article}
+% \end{verbatim}
+% \end{quote}
+
+% To load the style file in the review version:
+% \begin{quote}
+% \begin{verbatim}
+% \usepackage[review]{acl}
+% \end{verbatim}
+% \end{quote}
+% For the final version, omit the \verb|review| option:
+% \begin{quote}
+% \begin{verbatim}
+% \usepackage{acl}
+% \end{verbatim}
+% \end{quote}
+
+% To use Times Roman, put the following in the preamble:
+% \begin{quote}
+% \begin{verbatim}
+% \usepackage{times}
+% \end{verbatim}
+% \end{quote}
+% (Alternatives like txfonts or newtx are also acceptable.)
+
+% Please see the \LaTeX{} source of this document for comments on other packages that may be useful.
+
+% Set the title and author using \verb|\title| and \verb|\author|. Within the author list, format multiple authors using \verb|\and| and \verb|\And| and \verb|\AND|; please see the \LaTeX{} source for examples.
+
+% By default, the box containing the title and author names is set to the minimum of 5 cm. If you need more space, include the following in the preamble:
+% \begin{quote}
+% \begin{verbatim}
+% \setlength\titlebox{<dim>}
+% \end{verbatim}
+% \end{quote}
+% where \verb|<dim>| is replaced with a length. Do not set this length smaller than 5 cm.
+
+% \section{Document Body}
+
+% \subsection{Footnotes}
+
+% Footnotes are inserted with the \verb|\footnote| command.\footnote{This is a footnote.}
+
+% \subsection{Tables and figures}
+
+% See Table~\ref{tab:accents} for an example of a table and its caption.
+% \textbf{Do not override the default caption sizes.}
+
+% \begin{table}
+%   \centering
+%   \begin{tabular}{lc}
+%     \hline
+%     \textbf{Command} & \textbf{Output} \\
+%     \hline
+%     \verb|{\"a}|     & {\"a}           \\
+%     \verb|{\^e}|     & {\^e}           \\
+%     \verb|{\`i}|     & {\`i}           \\
+%     \verb|{\.I}|     & {\.I}           \\
+%     \verb|{\o}|      & {\o}            \\
+%     \verb|{\'u}|     & {\'u}           \\
+%     \verb|{\aa}|     & {\aa}           \\\hline
+%   \end{tabular}
+%   \begin{tabular}{lc}
+%     \hline
+%     \textbf{Command} & \textbf{Output} \\
+%     \hline
+%     \verb|{\c c}|    & {\c c}          \\
+%     \verb|{\u g}|    & {\u g}          \\
+%     \verb|{\l}|      & {\l}            \\
+%     \verb|{\~n}|     & {\~n}           \\
+%     \verb|{\H o}|    & {\H o}          \\
+%     \verb|{\v r}|    & {\v r}          \\
+%     \verb|{\ss}|     & {\ss}           \\
+%     \hline
+%   \end{tabular}
+%   \caption{Example commands for accented characters, to be used in, \emph{e.g.}, Bib\TeX{} entries.}
+%   \label{tab:accents}
+% \end{table}
+
+% As much as possible, fonts in figures should conform
+% to the document fonts. See Figure~\ref{fig:experiments} for an example of a figure and its caption.
+
+% Using the \verb|graphicx| package graphics files can be included within figure
+% environment at an appropriate point within the text.
+% The \verb|graphicx| package supports various optional arguments to control the
+% appearance of the figure.
+% You must include it explicitly in the \LaTeX{} preamble (after the
+% \verb|\documentclass| declaration and before \verb|\begin{document}|) using
+% \verb|\usepackage{graphicx}|.
+
+% \begin{figure}[t]
+%   \includegraphics[width=\columnwidth]{example-image-golden}
+%   \caption{A figure with a caption that runs for more than one line.
+%     Example image is usually available through the \texttt{mwe} package
+%     without even mentioning it in the preamble.}
+%   \label{fig:experiments}
+% \end{figure}
+
+% \begin{figure*}[t]
+%   \includegraphics[width=0.48\linewidth]{example-image-a} \hfill
+%   \includegraphics[width=0.48\linewidth]{example-image-b}
+%   \caption {A minimal working example to demonstrate how to place
+%     two images side-by-side.}
+% \end{figure*}
+
+% \subsection{Hyperlinks}
+
+% Users of older versions of \LaTeX{} may encounter the following error during compilation:
+% \begin{quote}
+% \verb|\pdfendlink| ended up in different nesting level than \verb|\pdfstartlink|.
+% \end{quote}
+% This happens when pdf\LaTeX{} is used and a citation splits across a page boundary. The best way to fix this is to upgrade \LaTeX{} to 2018-12-01 or later.
+
+% \subsection{Citations}
+
+% \begin{table*}
+%   \centering
+%   \begin{tabular}{lll}
+%     \hline
+%     \textbf{Output}           & \textbf{natbib command} & \textbf{ACL only command} \\
+%     \hline
+%     \citep{Gusfield:97}       & \verb|\citep|           &                           \\
+%     \citealp{Gusfield:97}     & \verb|\citealp|         &                           \\
+%     \citet{Gusfield:97}       & \verb|\citet|           &                           \\
+%     \citeyearpar{Gusfield:97} & \verb|\citeyearpar|     &                           \\
+%     \citeposs{Gusfield:97}    &                         & \verb|\citeposs|          \\
+%     \hline
+%   \end{tabular}
+%   \caption{\label{citation-guide}
+%     Citation commands supported by the style file.
+%     The style is based on the natbib package and supports all natbib citation commands.
+%     It also supports commands defined in previous ACL style files for compatibility.
+%   }
+% \end{table*}
+
+% Table~\ref{citation-guide} shows the syntax supported by the style files.
+% We encourage you to use the natbib styles.
+% You can use the command \verb|\citet| (cite in text) to get ``author (year)'' citations, like this citation to a paper by \citet{Gusfield:97}.
+% You can use the command \verb|\citep| (cite in parentheses) to get ``(author, year)'' citations \citep{Gusfield:97}.
+% You can use the command \verb|\citealp| (alternative cite without parentheses) to get ``author, year'' citations, which is useful for using citations within parentheses (e.g. \citealp{Gusfield:97}).
+
+% A possessive citation can be made with the command \verb|\citeposs|.
+% This is not a standard natbib command, so it is generally not compatible
+% with other style files.
+
+% \subsection{References}
+
+% \nocite{Ando2005,andrew2007scalable,rasooli-tetrault-2015}
+
+% The \LaTeX{} and Bib\TeX{} style files provided roughly follow the American Psychological Association format.
+% If your own bib file is named \texttt{custom.bib}, then placing the following before any appendices in your \LaTeX{} file will generate the references section for you:
+% \begin{quote}
+% \begin{verbatim}
+% \bibliography{custom}
+% \end{verbatim}
+% \end{quote}
+
+% You can obtain the complete ACL Anthology as a Bib\TeX{} file from \url{https://aclweb.org/anthology/anthology.bib.gz}.
+% To include both the Anthology and your own .bib file, use the following instead of the above.
+% \begin{quote}
+% \begin{verbatim}
+% \bibliography{anthology,custom}
+% \end{verbatim}
+% \end{quote}
+
+% Please see Section~\ref{sec:bibtex} for information on preparing Bib\TeX{} files.
+
+% \subsection{Equations}
+
+% An example equation is shown below:
+% \begin{equation}
+%   \label{eq:example}
+%   A = \pi r^2
+% \end{equation}
+
+% Labels for equation numbers, sections, subsections, figures and tables
+% are all defined with the \verb|\label{label}| command and cross references
+% to them are made with the \verb|\ref{label}| command.
+
+% This an example cross-reference to Equation~\ref{eq:example}.
+
+% \subsection{Appendices}
+
+% Use \verb|\appendix| before any appendix section to switch the section numbering over to letters. See Appendix~\ref{sec:appendix} for an example.
+
+% \section{Bib\TeX{} Files}
+% \label{sec:bibtex}
+
+% Unicode cannot be used in Bib\TeX{} entries, and some ways of typing special characters can disrupt Bib\TeX's alphabetization. The recommended way of typing special characters is shown in Table~\ref{tab:accents}.
+
+% Please ensure that Bib\TeX{} records contain DOIs or URLs when possible, and for all the ACL materials that you reference.
+% Use the \verb|doi| field for DOIs and the \verb|url| field for URLs.
+% If a Bib\TeX{} entry has a URL or DOI field, the paper title in the references section will appear as a hyperlink to the paper, using the hyperref \LaTeX{} package.
+
+% \section*{Limitations}
+
+% This document does not cover the content requirements for ACL or any
+% other specific venue.  Check the author instructions for
+% information on
+% maximum page lengths, the required ``Limitations'' section,
+% and so on.
+
+% \section*{Acknowledgments}
+
+% This document has been adapted
+% by Steven Bethard, Ryan Cotterell and Rui Yan
+% from the instructions for earlier ACL and NAACL proceedings, including those for
+% ACL 2019 by Douwe Kiela and Ivan Vuli\'{c},
+% NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
+% ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
+% NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
+% Bib\TeX{} suggestions for (NA)ACL 2017/2018 from Jason Eisner,
+% ACL 2017 by Dan Gildea and Min-Yen Kan,
+% NAACL 2017 by Margaret Mitchell,
+% ACL 2012 by Maggie Li and Michael White,
+% ACL 2010 by Jing-Shin Chang and Philipp Koehn,
+% ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
+% ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
+% ACL 2002 by Eugene Charniak and Dekang Lin,
+% and earlier ACL and EACL formats written by several people, including
+% John Chen, Henry S. Thompson and Donald Walker.
+% Additional elements were taken from the formatting instructions of the \emph{International Joint Conference on Artificial Intelligence} and the \emph{Conference on Computer Vision and Pattern Recognition}.
+
+% Bibliography entries for the entire Anthology, followed by custom entries
+%\bibliography{custom,anthology-overleaf-1,anthology-overleaf-2}
+
+% Custom bibliography entries only
+\bibliography{custom}
+
+\appendix
+
+% \section{Example Appendix}
+% \label{sec:appendix}
+
+% This is an appendix.
+
+\end{document}
