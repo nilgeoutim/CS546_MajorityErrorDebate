@@ -1,67 +1,58 @@
-# Improving Factuality and Reasoning in Language Models through Multiagent Debate
+# Majority Errors in Multi-Agent Debate: Analysis and Framework Design
 
-### [Project Page](https://composable-models.github.io/llm_debate/) | [Paper](https://arxiv.org/abs/2305.14325) 
+### [Project Paper](./CS546_GP.pdf) | [Original Framework](https://github.com/composable-models/llm_debate)
 
-[Yilun Du](https://yilundu.github.io/),
-[Shuang Li](https://shuangli59.github.io/),
-[Antonio Torralba](https://groups.csail.mit.edu/vision/torralbalab),
-[Joshua B. Tenenbaum](https://scholar.google.com/citations?user=rRJ9wTJMUB8C&hl=en),
-[Igor Mordatch](https://scholar.google.com/citations?user=Vzr1RukAAAAJ&hl=en)
+[Meitong Liu](mailto:meitong4@illinois.edu),
+[Maojie Xu](mailto:maojiex2@illinois.edu),
+[Jieyi Zhao](mailto:jieyi3@illinois.edu),
+[Ian Jiang](mailto:jisheng3@illinois.edu),
+[Wangjia Zhan](mailto:wangjia2@illinois.edu)
 
-This is a preliminary implementation of the paper "Improving Factuality and Reasoning in Language Models through Multiagent Debate". More tasks and settings will be released soon. 
-You may see some additional debate logs [here](https://www.dropbox.com/sh/6kq5ixfnf4zqk09/AABezsYsBhgg1IQAZ12yQ43_a?dl=0).
+This project investigates a critical limitation of Multi-Agent Debate (MAD): the **"majority error"** setting, where the majority of agents initially produce incorrect answers. Our analysis reveals that naive MAD often fails to recover from these errors, with performance gains stemming primarily from increased sampling rather than the debate process itself.
 
-Also, check out gauss5930's awesome implementation of multiagent debate on opensource LLMs [here](https://github.com/gauss5930/LLM-Agora)!
+To address this, we propose two extensions to stabilize debate and improve reasoning:
+1.  **Confidence Score:** Incorporating an external critic to assign confidence scores.
+2.  **Role Specialization:** Introducing diverse roles (Logician, Programmer, Skeptic) to reduce correlated errors.
 
 ## Running experiments
 
-The code for running arithmetic, GSM, biographies, and MMLU tasks may be found in the following subfolders
+The code for running our majority-error analysis and improved debate frameworks can be found in the `gsm/` folder. We focus on a challenging subset of GSM8K where standard majority voting fails.
 
-* ./math/ contains code for running math
-* ./gsm/ contains code for running gsm
-* ./biography/ contains code for running biographies
-* ./mmlu/ contains code for running mmlu results.
+**Naive MAD Analysis:**
 
-**Math:**
+To generate answers using the standard Multi-Agent Debate baseline and analyze performance on majority-error tasks:
+    
+    cd gsm
+    python gen_gsm.py
 
-To generate and evaluated answer for Math problems through multiagent debate, cd into the math directory and run:
-	`python gen_math.py`
-	
-**Grade School Math:**
+To evaluate the generated results and compute flip statistics:
+    
+    python eval_gsm.py
 
-To generate answers for Grade School Math problems through multiagent debate, cd into the gsm directory and run:
-	`python gen_gsm.py`
+**Improved Frameworks (Ours):**
 
-To evaluate the generated results of Grade School Math problems:
-	`python eval_gsm.py`
-	
-You can download the GSM dataset [here](https://github.com/openai/grade-school-math)
+To run the debate with our proposed **Confidence Score** and **Role Specialization** :
 
+    python gen_gsm_confiscore_v5.py
 
-**Biography:**
+To evaluate the potential of MAD under **High-Quality Supervision** (using a stronger critic):
 
-To generate answers for Biography problems through multiagent debate, cd into the biography directory and run:
-	`python gen_conversation.py`
+    python gen_gsm_better_supervision.py
 
-To evaluate the generated results for Biography problems:
-	`python eval_conversation.py`
-	
-**MMLU:**
+**Visualization:**
 
-To generate answers for MMLU through multiagent debate, cd into the MMLU directory and run:
-	`python gen_mmlu.py`
+To reproduce the analysis figures (Accuracy Trends, Flip Dynamics) shown in the report:
 
-To evaluate the generated results of MMLU:
-	`python eval_mmlu.py`
-	
-You can download the MMLU dataset [here](https://github.com/hendrycks/test)
+    jupyter notebook Figures.ipynb
 
-If you would like to cite the paper, here is a bibtex file:
-```
-@article{du2023improving,
-  title={Improving Factuality and Reasoning in Language Models through Multiagent Debate},
-  author={Du, Yilun and Li, Shuang and Torralba, Antonio and Tenenbaum, Joshua B and Mordatch, Igor},
-  journal={arXiv preprint arXiv:2305.14325},
-  year={2023}
+## Citation
+
+If you use this code or analysis in your work, please cite our project:
+
+```bibtex
+@article{liu2025majority,
+  title={Majority Errors in Multi-Agent Debate: Analysis and Framework Design},
+  author={Liu, Meitong and Xu, Maojie and Zhao, Jieyi and Jiang, Ian and Zhan, Wangjia},
+  journal={Course Project, CS546},
+  year={2025}
 }
-```
