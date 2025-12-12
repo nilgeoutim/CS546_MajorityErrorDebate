@@ -16,7 +16,12 @@ To address this, we propose two extensions to stabilize debate and improve reaso
 
 ## Running experiments
 
-The code for running our majority-error analysis and improved debate frameworks can be found in the `gsm/` folder. We focus on a challenging subset of GSM8K where standard majority voting fails.
+The code for running our majority-error analysis and improved debate frameworks can be found in the `gsm/` folder. 
+### Dataset setup:
+1. gsm_test.jsonl: the original GSM_8k
+2. gsm_majority_error.jsonl: A challenging subset of GSM8K. We extract 225 questions from the test set where a majority vote among three independently sampled agents is incorrect
+
+### Run Experiments
 
 **Naive MAD Analysis:**
 
@@ -39,6 +44,7 @@ To run the multi-agent debate with our proposed **Confidence Score**, use the fo
 Version Differences: Version 1 (Local View): The critic evaluates each agent individually; Version 2 (Global View): The critic assesses all agents simultaneously to resolve conflicts and mitigate collective hallucinations. Note: While Version 2 is the primary method presented in our paper, we include Version 1 as it occasionally achieves superior performance in empirical trials.
 
 To run the debate with our proposed **Role Specialization** ：
+
     python gen_gsm_role_specialization.py
 
 
