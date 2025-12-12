@@ -36,19 +36,19 @@ To evaluate the generated results and compute flip statistics:
 
 **Improved Frameworks (Ours):**
 
-To run the multi-agent debate with our proposed **Confidence Score**, use the following scripts:
+To run the multi-agent debate with our proposed **Confidence Score** (§3.1), use the following scripts:
 
     python gen_gsm_confiscore_v1.py  # v1: Local-View Critic
     python gen_gsm_confiscore_v2.py  # v2: Global-View Critic (Paper Implementation)
 
 Version Differences: Version 1 (Local View): The critic evaluates each agent individually; Version 2 (Global View): The critic assesses all agents simultaneously to resolve conflicts and mitigate collective hallucinations. Note: While Version 2 is the primary method presented in our paper, we include Version 1 as it occasionally achieves superior performance in empirical trials.
 
-To run the debate with our proposed **Role Specialization** ：
+To run the debate with our proposed **Role Specialization** (§3.2):
     
     python gen_gsm_role_specialization.py
 
 
-To evaluate the potential of MAD under **High-Quality Supervision** (using a stronger critic):
+To evaluate the potential of MAD under **High-Quality Supervision** (using a stronger critic, §5.5):
 
     python gen_gsm_better_supervision.py
 
