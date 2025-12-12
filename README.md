@@ -13,7 +13,7 @@ This project investigates a critical limitation of Multi-Agent Debate (MAD): the
 To address this, we propose two extensions to stabilize debate and improve reasoning:
 1.  **Confidence Score:** Incorporating an external critic to assign confidence scores.
 2.  **Role Specialization:** Introducing diverse roles (Logician, Programmer, Skeptic) to reduce correlated errors.
-
+![Framework Workflow](framework_workflow.png)
 ## Running experiments
 
 The code for running our majority-error analysis and improved debate frameworks can be found in the `gsm/` folder. 
